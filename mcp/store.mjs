@@ -5,8 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(__dirname, '..');
-export const CONTENT = path.join(ROOT, 'src', 'content');
-export const STATE = path.join(ROOT, '.astropress');
+// Testler gerçek içerik/state'e dokunmadan izole temp dizinlere yönlendirebilsin diye env override.
+export const CONTENT = process.env.ASTROPRESS_CONTENT || path.join(ROOT, 'src', 'content');
+export const STATE = process.env.ASTROPRESS_STATE || path.join(ROOT, '.astropress');
 export const COLLECTIONS = { blog: 'post', products: 'product', pages: 'page' };
 
 const TR = { 'ğ': 'g', 'ü': 'u', 'ş': 's', 'ö': 'o', 'ç': 'c', 'ı': 'i', 'Ğ': 'g', 'Ü': 'u', 'Ş': 's', 'Ö': 'o', 'Ç': 'c', 'İ': 'i' };

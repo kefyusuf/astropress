@@ -1,12 +1,18 @@
 # AstroPress
 
-Astro tabanlı **agent-native CMS**: gerçek bir Astro statik site iskeleti + agent'ların siteyi
-güvenle yönetmesini sağlayan MCP (Model Context Protocol) köprüsü. Yanında, ürün hissini doğrulamak
-için tek dosyalık etkileşimli konsept prototipi (`index.html`).
+[![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-yellow.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
+![Astro](https://img.shields.io/badge/Astro-5-FF5D01?logo=astro&logoColor=white)
 
-> Durum: **çalışan iskelet + gerçek yönetim arayüzü**. İçerik Markdown + content collections olarak durur,
-> `astro build` gerçek statik çıktı üretir, MCP sunucusu ve HTTP admin arayüzü aynı guardrail'lerle
-> gerçek CRUD + onay akışı işletir. Pazaryeri senkronu henüz simülasyon.
+Astro tabanlı **agent-native CMS**: gerçek bir Astro statik site iskeleti + agent'ların siteyi
+**güvenle** yönetmesini sağlayan MCP (Model Context Protocol) köprüsü. Guardrail (yetki sınırı),
+insan onayı, sunucu tarafı RBAC ve denetim kaydı (audit log) çekirdeğin içindedir — sonradan eklenen
+bir eklenti değil. Yanında, ürün hissini doğrulamak için tek dosyalık konsept prototipi (`prototype/`).
+
+> **Durum: çalışan, test edilmiş v1.** İçerik Markdown + content collections olarak durur, `astro build`
+> gerçek statik çıktı üretir (TR + `/en/`), MCP sunucusu ve HTTP admin arayüzü aynı guardrail'lerle gerçek
+> CRUD + onay akışı işletir. 30 birim/entegrasyon testi + 23 uçtan uca smoke kontrolü + CI. MIT lisanslı.
+> Pazaryeri senkronu henüz yok (gerçek API kimliği gerektirir — yol haritasında).
 
 ## Neden bu konsept?
 
@@ -17,19 +23,49 @@ için tek dosyalık etkileşimli konsept prototipi (`index.html`).
   denetim kaydı (audit log).
 - TR e-ticaret bağlaçları (Trendyol / Hepsiburada senkronu) yerel pazarda first-mover avantajı sağlar.
 
-## Hızlı başlangıç (gerçek iskelet)
+## Mimari
+
+```
+  MCP istemcisi (Qoder / Claude / kendi agent'ınız)      Tarayıcı (admin)
+            │                                                  │
+            ▼                                                  ▼
+  mcp/server.mjs (12 tool, stdio)                    mcp/http.mjs (/api + /site/)
+            └──────────────────────┬───────────────────────────┘
+                                   ▼
+              mcp/ops.mjs — TEK guardrail + RBAC kaynağı
+              create → draft · yayın = insan onayı · yetki matrisi · audit
+                                   ▼
+              mcp/store.mjs — Markdown içerik + JSON state
+              src/content/*.md · .astropress/{tasks,audit}.json
+                                   ▼
+              astro build → dist/ (yalnız published, dile göre ayrık)
+              TR rotaları (/) + EN rotaları (/en/)
+```
+
+MCP ve HTTP **aynı `ops.mjs`'yi** çağırır; guardrail tek kaynakta, iki arayüzde de aynı şekilde zorunlu.
+
+## Hızlı başlangıç
 
 ```bash
 npm install          # astro, @modelcontextprotocol/sdk, gray-matter, zod
-npm run dev          # http://localhost:4321 — geliştirme sunucusu
+npm run admin        # http://127.0.0.1:4322 — yönetim arayüzü + /site/ önizleme
 npm run build        # astro build → dist/ (yalnız published içerik)
-npm run preview      # dist/ üzerinden statik önizleme
-npm run mcp          # MCP stdio sunucusunu başlatır (agent köprüsü)
-npm run admin        # http://127.0.0.1:4322 — gerçek yönetim arayüzü + /site/ önizleme
-npm run smoke        # uçtan uca guardrail + RBAC + i18n testi (23 kontrol, gerçek build'lerle)
+npm test             # birim + entegrasyon testleri (30 kontrol)
+npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build'lerle)
 ```
 
-Örnek site: **Köz Kahve** — üçüncü nesil kahve mağazası (blog + ürünler + sayfalar).
+Örnek site: **Köz Kahve** — üçüncü nesil kahve mağazası (blog + ürünler + sayfalar, TR/EN).
+
+| Script | Ne yapar |
+|---|---|
+| `npm run dev` | Astro geliştirme sunucusu (`http://localhost:4321`) |
+| `npm run build` | `astro build` → `dist/` (yalnız published) |
+| `npm run preview` | `dist/` üzerinden statik önizleme |
+| `npm run mcp` | MCP stdio sunucusu (agent köprüsü) |
+| `npm run admin` | Yönetim arayüzü + `/api` + `/site/` (`127.0.0.1:4322`) |
+| `npm test` | `node:test` birim + entegrasyon (30 kontrol, izole) |
+| `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
+| `npm run ci` | `build && test && smoke` — CI'ın yerel eşdeğeri |
 
 ## Dizin yapısı
 
@@ -38,25 +74,28 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n testi (23 kontrol, ger
 ├── src/
 │   ├── content.config.ts     # blog / products / pages collection şemaları (zod)
 │   ├── content/              # Markdown içerik (frontmatter = CMS alanları)
-│   │   ├── blog/             # yazılar
-│   │   ├── products/         # ürünler (price, stock)
-│   │   └── pages/            # sabit sayfalar
+│   │   ├── blog/             # yazılar (TR + EN)
+│   │   ├── products/         # ürünler (price, stock; TR + EN)
+│   │   └── pages/            # sabit sayfalar (TR + EN)
 │   ├── layouts/Base.astro    # header / footer / meta + TR|EN dil değiştirici
 │   ├── lib/i18n.ts           # dil filtreleri, çeviri eşleşmesi, dil başına rota href'leri
 │   ├── pages/                # TR rotaları + en/ (EN) rotaları (published-only, dile göre ayrık)
 │   └── styles/global.css     # light-dark() tema, duyarlı yerleşim
 ├── mcp/
-│   ├── ops.mjs             # TEK guardrail + RBAC kaynağı: tüm iş mantığı (MCP + HTTP paylaşır)
-│   ├── auth.mjs            # agent kimliği (env) + yetki matrisi + insan yetkileri
-│   ├── agents.json         # agent kayıt defteri (yetki matrisi)
-│   ├── server.mjs          # MCP stdio sunucusu — 12 tool (ince kayıt katmanı)
-│   ├── http.mjs            # HTTP köprüsü: admin arayüzü + /api + /site/ (127.0.0.1)
-│   ├── store.mjs           # Markdown okuma/yazma, slug, state, audit
-│   └── smoke.mjs           # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
-├── admin/
-│   └── index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
+│   ├── ops.mjs               # TEK guardrail + RBAC kaynağı: tüm iş mantığı (MCP + HTTP paylaşır)
+│   ├── auth.mjs              # agent kimliği (env) + yetki matrisi + insan yetkileri
+│   ├── agents.json           # agent kayıt defteri (yetki matrisi)
+│   ├── server.mjs            # MCP stdio sunucusu — 12 tool (ince kayıt katmanı)
+│   ├── http.mjs              # HTTP köprüsü: admin arayüzü + /api + /site/ (127.0.0.1)
+│   ├── store.mjs             # Markdown okuma/yazma, slug, state, audit
+│   └── smoke.mjs             # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
+├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
+├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
+├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
+├── prototype/index.html      # konsept prototipi (aşağıda)
 ├── .astropress/              # tasks.json (onay kuyruğu) + audit.json — gitignore'lu
-└── index.html                # konsept prototipi (aşağıda)
+├── LICENSE                   # MIT
+└── package.json
 ```
 
 ## İçerik modeli
@@ -151,13 +190,19 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
 
 `env.ASTROPRESS_AGENT` kimliği seçer; her agent için ayrı kayıt açıp farklı yetki verebilirsiniz.
 
-### Smoke testi
+## Test ve kalite
 
-`npm run smoke` SDK istemcileriyle sunucuyu farklı kimliklerde spawn eder ve **23 kontrol** koşar:
-ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
-(EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR `/blog/` rotasına sızmaz, silme temizler) + RBAC
-(content-studio commerce/approve reddi, commerce-bot create reddi / fiyat izni, reader salt-okunur,
-reddedilenlerin audit'e yazılması). Hepsi geçince `SMOKE OK` ve exit 0.
+- **Birim + entegrasyon (`npm test`):** `node:test` ile **30 kontrol** — `store` (Türkçe slug, regex +
+  path-traversal reddi, CRUD, durum filtresi), `ops` (guardrail: create→draft, update status'u korur,
+  commerce gating; RBAC deny + audit; yayın zinciri request→approve/reject), `auth` (yetki matrisi,
+  hiçbir agent'ın `publish` yetkisi olmadığı). Testler `ASTROPRESS_CONTENT` / `ASTROPRESS_STATE` env ile
+  **izole temp dizinlerde** koşar; gerçek içeriğe/state'e dokunmaz.
+- **Uçtan uca (`npm run smoke`):** SDK istemcileriyle sunucuyu farklı kimliklerde spawn eder, **23 kontrol**
+  koşar: ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
+  (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
+  Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
+- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke`.
+  Yerel eşdeğeri: `npm run ci`.
 
 ## Yönetim arayüzü (`npm run admin`)
 
@@ -176,7 +221,7 @@ Aynı `ops.mjs` guardrail'lerini kullanır; insan aktör olarak etiketlenir.
 `mcp/http.mjs` yalnız `127.0.0.1`'e bağlanır (yerel geliştirme); `/site/` path-traversal'e karşı
 normalize + kök sınırıyla korunur, slug'lar `store.mjs`'de regex ile doğrulanır.
 
-## Konsept prototipi (`index.html`)
+## Konsept prototipi (`prototype/index.html`)
 
 Gerçek iskeletin üstüne gelecek yönetim arayüzünün ürün hissi: tek dosya, bağımlılıksız vanilla JS.
 
@@ -188,7 +233,7 @@ Gerçek iskeletin üstüne gelecek yönetim arayüzünün ürün hissi: tek dosy
 - **Site Stüdyosu:** 9 canlı tema kontrolü + mağaza önizlemesi, JSON dışa aktarım.
 - **Build simülasyonu**, etkinlik akışı, açık/koyu tema, 320px'e kadar duyarlı.
 
-Çalıştırma: dosyayı tarayıcıda aç (`start index.html`) veya `npx serve .`. Derleme gerekmez.
+Çalıştırma: dosyayı tarayıcıda aç (`start prototype/index.html`) veya `npx serve prototype`. Derleme gerekmez.
 Not: prototipteki tüm görev/build/senkron işlemleri tarayıcı içinde simülasyondur; gerçek operasyon
 MCP köprüsü üzerinden yapılır.
 
@@ -197,11 +242,14 @@ MCP köprüsü üzerinden yapılır.
 1. ~~Gerçek Astro content collections + `astro build`~~ ✔
 2. ~~MCP araç köprüsü + guardrail/onay/audit~~ ✔
 3. ~~Yönetim arayüzünü gerçek backend'e bağlamak (canlı kuyruk, gerçek build)~~ ✔
-4. Kalıcı depolama (SQLite/Postgres) ve çoklu site desteği.
-5. Pazaryeri bağlaçlarının gerçek API'lerle değiştirilmesi (Trendyol, Hepsiburada).
-6. ~~Rol tabanlı erişim kontrolü (agent yetki matrisi, sunucu tarafı RBAC)~~ ✔
-7. ~~i18n (TR/EN) — içerik çevirileri + `/en/` rotaları + dil değiştirici~~ ✔
+4. ~~Rol tabanlı erişim kontrolü (agent yetki matrisi, sunucu tarafı RBAC)~~ ✔
+5. ~~i18n (TR/EN) — içerik çevirileri + `/en/` rotaları + dil değiştirici~~ ✔
+6. ~~Test altyapısı (`node:test`) + CI (node 20/22/24) + MIT lisans + proje kimliği~~ ✔
+7. **Çoklu site desteği** + isteğe bağlı DB backend'i. Depolama bilinçli olarak dosya tabanlı
+   (Markdown + JSON, git-native); ölçek gerektiğinde SQLite/Postgres opsiyonel bir katman olarak eklenebilir.
+8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
+   canlı anahtarlarla doğrulanacak — simülasyon değil.
 
 ## Lisans
 
-Henüz belirlenmedi — konsept aşaması.
+[MIT](LICENSE) · © 2026 Yusuf KEF

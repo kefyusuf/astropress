@@ -3,14 +3,34 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Astro tabanlı, agent-native CMS: gerçek content collections + MCP agent köprüsü (guardrail + insan onayı).",
+  "description": "Astro tabanlı, agent-native CMS: gerçek content collections + MCP agent köprüsü (guardrail + insan onayı + RBAC + i18n).",
+  "license": "MIT",
+  "author": "Yusuf KEF <kefyusuf@gmail.com>",
+  "keywords": [
+    "astro",
+    "cms",
+    "agent",
+    "mcp",
+    "model-context-protocol",
+    "headless-cms",
+    "static-site",
+    "ai",
+    "guardrails",
+    "rbac",
+    "i18n"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
     "mcp": "node mcp/server.mjs",
     "admin": "node mcp/http.mjs",
-    "smoke": "node mcp/smoke.mjs"
+    "smoke": "node mcp/smoke.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "ci": "npm run build && npm test && npm run smoke"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
