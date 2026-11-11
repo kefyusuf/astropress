@@ -1,0 +1,49 @@
+---
+import '../styles/global.css';
+interface Props { title: string; description?: string; lang?: 'tr' | 'en'; altHref?: string; }
+const { title, lang = 'tr', altHref } = Astro.props;
+const en = lang === 'en';
+const description = Astro.props.description || (en
+  ? 'Köz Kahve — third-wave coffee, roasted right.'
+  : 'Köz Kahve — üçüncü nesil kahve, doğru kavurma.');
+const home = en ? '/en/' : '/';
+const aboutHref = en ? '/en/about/' : '/hakkimizda/';
+const switchHref = altHref || (en ? '/' : '/en/');
+---
+<!doctype html>
+<html lang={lang}>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="description" content={description} />
+  <title>{title}</title>
+</head>
+<body>
+  <header class="site-head">
+    <a class="brand" href={home}>
+      <span class="brand-mark">☕</span> Köz Kahve
+    </a>
+    <nav>
+      <a href={home}>{en ? 'Shop' : 'Mağaza'}</a>
+      <a href={home + '#blog'}>Blog</a>
+      <a href={aboutHref}>{en ? 'About' : 'Hakkımızda'}</a>
+      <span class="lang-switch">
+        {en ? <a href={switchHref}>TR</a> : <span class="active">TR</span>}
+        {en ? <span class="active">EN</span> : <a href={switchHref}>EN</a>}
+      </span>
+    </nav>
+  </header>
+  <main class="wrap">
+    <slot />
+  </main>
+  <footer class="site-foot">
+    {en
+      ? <span>© 2026 Köz Kahve · managed with <strong>AstroPress</strong></span>
+      : <span>© 2026 Köz Kahve · <strong>AstroPress</strong> ile yönetiliyor</span>}
+    {en
+      ? <span>Astro static output · agent + human co-production</span>
+      : <span>Astro statik çıktı · agent + insan ortak üretimi</span>}
+  </footer>
+</body>
+</html>

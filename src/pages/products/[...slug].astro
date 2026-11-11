@@ -1,0 +1,23 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { altHref } from '../../lib/i18n';
+export async function getStaticPaths() {
+  const products = await getCollection('products', ({ data }) => data.status === 'published' && data.lang !== 'en');
+  return products.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+const alt = await altHref('products', entry);
+---
+<Base title={entry.data.seoTitle || entry.data.title} description={entry.data.seoDesc || entry.data.excerpt} lang="tr" altHref={alt}>
+  <article class="prose">
+    <div class="meta">
+      <span class="badge">Ürün</span>
+      <span class="price">₺{entry.data.price}</span>
+      <span>stok: {entry.data.stock}</span>
+    </div>
+    <h1>{entry.data.title}</h1>
+    <Content />
+  </article>
+</Base>

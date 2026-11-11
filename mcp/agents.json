@@ -1,0 +1,22 @@
+{
+  "operator": {
+    "name": "İnsan Operatör",
+    "perms": { "create": true, "edit": true, "delete": true, "commerce": true, "publish": true }
+  },
+  "content-studio": {
+    "name": "İçerik Stüdyosu",
+    "perms": { "create": true, "edit": true, "delete": true, "commerce": false, "publish": false }
+  },
+  "commerce-bot": {
+    "name": "Commerce Bot",
+    "perms": { "create": false, "edit": true, "delete": false, "commerce": true, "publish": false }
+  },
+  "seo-agent": {
+    "name": "SEO Agent",
+    "perms": { "create": false, "edit": true, "delete": false, "commerce": false, "publish": false }
+  },
+  "reader": {
+    "name": "Salt Okunur",
+    "perms": { "create": false, "edit": false, "delete": false, "commerce": false, "publish": false }
+  }
+}

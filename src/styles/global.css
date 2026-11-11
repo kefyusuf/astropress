@@ -1,0 +1,63 @@
+:root {
+  --bg: light-dark(#faf6f0, #171310);
+  --surface: light-dark(#ffffff, #241d17);
+  --text: light-dark(#2b2119, #f3ece3);
+  --muted: light-dark(#7d7062, #b5a898);
+  --border: light-dark(#e9dfd2, #3c3226);
+  --primary: light-dark(#b0562f, #e08a54);
+  --accent: light-dark(#e0a458, #f0b878);
+  --soft: light-dark(#f4e9dc, #2e251c);
+  color-scheme: light dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+.wrap { max-width: 880px; margin: 0 auto; padding: 24px 20px 48px; }
+.site-head {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  max-width: 880px; margin: 0 auto; padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 18px; color: var(--text); text-decoration: none; }
+.brand-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: inline-flex; align-items: center; justify-content: center; }
+.site-head nav { margin-left: auto; display: flex; gap: 4px; }
+.site-head nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; }
+.site-head nav a:hover { color: var(--primary); background: var(--soft); }
+.lang-switch { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--border); }
+.lang-switch a, .lang-switch .active { font-size: 12px; font-weight: 600; padding: 4px 7px; border-radius: 7px; }
+.lang-switch a { color: var(--muted); text-decoration: none; }
+.lang-switch a:hover { color: var(--primary); background: var(--soft); }
+.lang-switch .active { color: var(--primary); background: var(--soft); }
+.hero { padding: 32px 0 8px; }
+.hero h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.6px; margin: 0 0 10px; }
+.hero h1 em { font-style: normal; color: var(--primary); }
+.hero p { color: var(--muted); max-width: 52ch; margin: 0 0 18px; }
+.kicker { display: inline-block; font-size: 12px; font-weight: 500; color: var(--primary); background: var(--soft); border: 1px solid var(--border); padding: 3px 10px; border-radius: 99px; margin-bottom: 12px; }
+.sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 32px 0 14px; }
+.sec-h h2 { margin: 0; font-size: 21px; letter-spacing: -0.3px; }
+.sec-h span { font-size: 12px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.card h3 { margin: 0; font-size: 16px; }
+.card h3 a { color: var(--text); text-decoration: none; }
+.card h3 a:hover { color: var(--primary); }
+.card p { margin: 0; font-size: 13px; color: var(--muted); flex: 1; }
+.price { font-weight: 600; color: var(--primary); }
+.post-list { display: flex; flex-direction: column; gap: 10px; }
+.post-row { display: flex; gap: 12px; align-items: center; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 12px 14px; text-decoration: none; color: var(--text); }
+.post-row:hover { border-color: var(--primary); }
+.post-row .date { font-size: 12px; color: var(--muted); border: 1px solid var(--border); background: var(--soft); border-radius: 8px; padding: 4px 8px; white-space: nowrap; }
+.post-row h3 { margin: 0 0 2px; font-size: 15px; }
+.post-row p { margin: 0; font-size: 13px; color: var(--muted); }
+article.prose { max-width: 68ch; }
+article.prose h1 { font-size: 30px; letter-spacing: -0.5px; }
+article.prose blockquote { border-left: 3px solid var(--primary); margin: 16px 0; padding: 8px 16px; background: var(--soft); border-radius: 0 10px 10px 0; color: var(--muted); }
+.meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 99px; background: var(--soft); border: 1px solid var(--border); color: var(--muted); }
+.site-foot { max-width: 880px; margin: 0 auto; padding: 18px 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.site-foot strong { color: var(--primary); font-weight: 500; }
+@media (max-width: 560px) { .hero h1 { font-size: 27px; } .grid { grid-template-columns: 1fr; } }

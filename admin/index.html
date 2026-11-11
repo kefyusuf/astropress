@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AstroPress Admin — Köz Kahve</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#f6f3ee, #161210);
+    --card: light-dark(#fffdf9, #201a16);
+    --inset: light-dark(#f1ece4, #28211c);
+    --fg: light-dark(#241d18, #f0e9e2);
+    --muted: light-dark(#6d6259, #a89c91);
+    --border: light-dark(#e4dcd2, #362d26);
+    --primary: #b0562f;
+    --primary-soft: light-dark(#f3e0d5, #3a2418);
+    --ok: light-dark(#2e7d4f, #7fc79b);
+    --warn: light-dark(#9a6b1f, #d9a75f);
+    --danger: light-dark(#b3372f, #e08a83);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.5; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 5; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; font-size: 16px; }
+  .brand .sub { color: var(--muted); font-size: 12px; }
+  .top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .build-state { font-size: 12px; color: var(--muted); }
+  .btn {
+    border: 1px solid var(--border); background: var(--card); color: var(--fg);
+    border-radius: 8px; padding: 8px 14px; min-height: 36px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--primary); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn.danger { color: var(--danger); }
+  .btn.small { padding: 4px 10px; min-height: 32px; font-size: 13px; }
+  .btn[disabled] { opacity: .55; cursor: wait; }
+  .tabs { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--border); background: var(--card); }
+  .tab {
+    border: none; background: none; color: var(--muted); cursor: pointer;
+    padding: 10px 14px; min-height: 40px; border-bottom: 2px solid transparent; font-size: 14px;
+  }
+  .tab.active { color: var(--fg); border-bottom-color: var(--primary); font-weight: 500; }
+  .badge-count {
+    display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px;
+    background: var(--primary); color: #fff; font-size: 12px; line-height: 18px;
+  }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .toolbar input[type="search"] { flex: 1; min-width: 160px; }
+  input, select, textarea {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  textarea { width: 100%; min-height: 220px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; background: var(--inset); }
+  td .slug { display: block; color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; border: 1px solid var(--border); }
+  .b-draft { color: var(--warn); border-color: currentColor; }
+  .b-review { color: var(--muted); }
+  .b-published { color: var(--ok); border-color: currentColor; }
+  .b-type { background: var(--inset); }
+  .b-en { color: var(--primary); border-color: currentColor; }
+  .b-approval { color: var(--warn); border-color: currentColor; }
+  .b-done { color: var(--ok); border-color: currentColor; }
+  .b-rejected { color: var(--danger); border-color: currentColor; }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .empty { padding: 28px; text-align: center; color: var(--muted); }
+  .editor { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; display: grid; gap: 14px; }
+  .editor .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field { display: grid; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input, .field select { width: 100%; }
+  .status-line { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--inset); border-radius: 8px; }
+  .editor-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .task-card {
+    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--warn);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+    display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  h2 { font-size: 15px; margin: 22px 0 10px; }
+  h2:first-child { margin-top: 0; }
+  footer { padding: 16px 20px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); margin-top: 30px; }
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; max-width: min(360px, calc(100vw - 32px)); }
+  .toast {
+    background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    border-radius: 8px; padding: 10px 14px; box-shadow: 0 4px 16px light-dark(#0002, #0008);
+  }
+  .toast.err { border-left-color: var(--danger); }
+  .toast.ok { border-left-color: var(--ok); }
+  @media (max-width: 720px) {
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+    tr:last-child { border-bottom: none; }
+    td { border: none; padding: 4px 12px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    td::before { content: attr(data-label); color: var(--muted); font-size: 12px; flex-shrink: 0; }
+    td.cell-title { display: block; }
+    td.cell-title::before { display: block; margin-bottom: 2px; }
+    .editor .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">☕ <strong>AstroPress</strong> <span class="sub">Admin · Köz Kahve</span></div>
+  <div class="top-actions">
+    <span id="build-state" class="build-state"></span>
+    <button class="btn" data-action="theme" aria-label="Tema değiştir">Tema</button>
+    <a class="btn" href="/site/" target="_blank" rel="noopener">Siteyi gör</a>
+    <button class="btn primary" id="build-btn" data-action="build">Build al</button>
+  </div>
+</header>
+<nav class="tabs">
+  <button class="tab active" data-action="tab" data-view="content">İçerik</button>
+  <button class="tab" data-action="tab" data-view="tasks">Onay Kuyruğu <span id="task-badge" class="badge-count" hidden></span></button>
+  <button class="tab" data-action="tab" data-view="audit">Denetim</button>
+  <button class="tab" data-action="tab" data-view="agents">Agent'lar</button>
+</nav>
+<main id="main"></main>
+<footer>AstroPress · gerçek Astro content collections + MCP köprüsü · agent'lar taslak üretir, yayın yetkisi insanda.</footer>
+<div id="toasts" aria-live="polite"></div>
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const main = $('#main');
+  const COLS = { blog: 'Yazı', products: 'Ürün', pages: 'Sayfa' };
+  const STATUS = { draft: 'Taslak', review: 'İncelemede', published: 'Yayında' };
+  const LANG = { tr: 'TR', en: 'EN' };
+  const state = { view: 'content', filters: { col: '', status: '', q: '', lang: '' }, editing: null, newDraft: null, items: [], tasks: [] };
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const fmtTs = (t) => new Date(t).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  async function api(p, opts = {}) {
+    const r = await fetch(p, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    return j;
+  }
+
+  function toast(msg, kind = '') {
+    const el = document.createElement('div');
+    el.className = 'toast ' + kind;
+    el.textContent = msg;
+    $('#toasts').appendChild(el);
+    setTimeout(() => el.remove(), 4200);
+  }
+
+  async function loadAll() {
+    const [items, tasks] = await Promise.all([api('/api/content'), api('/api/tasks')]);
+    state.items = items; state.tasks = tasks;
+    const pending = tasks.filter((t) => t.status === 'approval').length;
+    const badge = $('#task-badge');
+    badge.hidden = !pending; badge.textContent = pending;
+    render();
+  }
+
+  function render() {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === state.view));
+    if (state.view === 'content') renderContent();
+    else if (state.view === 'editor') renderEditor();
+    else if (state.view === 'tasks') renderTasks();
+    else if (state.view === 'agents') renderAgents();
+    else renderAudit();
+  }
+
+  async function renderAgents() {
+    const agents = await api('/api/agents');
+    const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish'];
+    const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın' };
+    main.innerHTML = `
+      <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (mcp/agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Agent</th>${permKeys.map((k) => `<th>${labels[k]}</th>`).join('')}</tr></thead>
+        <tbody>${agents.map((a) => `
+          <tr>
+            <td class="cell-title" data-label="Agent"><strong>${esc(a.name)}</strong><span class="slug">${esc(a.id)}</span></td>
+            ${permKeys.map((k) => `<td data-label="${labels[k]}"><span class="badge ${a.perms[k] ? 'b-done' : 'b-rejected'}">${a.perms[k] ? 'var' : 'yok'}</span></td>`).join('')}
+          </tr>`).join('')}</tbody>
+      </table></div>`;
+  }
+
+  function filtered() {
+    const { col, status, q, lang } = state.filters;
+    return state.items
+      .filter((i) => (!col || i.collection === col) && (!status || i.status === status) &&
+        (!lang || (i.lang || 'tr') === lang) &&
+        (!q || (i.title + ' ' + i.id).toLowerCase().includes(q.toLowerCase())))
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }
+
+  function rowsHTML() {
+    const rows = filtered();
+    if (!rows.length) return '<tr><td colspan="7"><div class="empty">Kayıt yok.</div></td></tr>';
+    return rows.map((i) => `
+      <tr>
+        <td class="cell-title" data-label="Başlık"><strong>${esc(i.title)}</strong><span class="slug">${esc(i.collection)}/${esc(i.id)}</span></td>
+        <td data-label="Tür"><span class="badge b-type">${COLS[i.collection]}</span></td>
+        <td data-label="Dil"><span class="badge ${i.lang === 'en' ? 'b-en' : 'b-type'}">${LANG[i.lang] || 'TR'}</span></td>
+        <td data-label="Durum"><span class="badge b-${i.status}">${STATUS[i.status]}</span></td>
+        <td data-label="Yazar">${esc(i.author)}</td>
+        <td data-label="Tarih">${fmtDate(i.date)}</td>
+        <td data-label="İşlemler"><div class="row-actions">
+          <button class="btn small" data-action="edit" data-col="${i.collection}" data-slug="${esc(i.id)}">Düzenle</button>
+          ${i.status !== 'published' ? `<button class="btn small" data-action="pub" data-col="${i.collection}" data-slug="${esc(i.id)}">Yayın iste</button>` : ''}
+          <button class="btn small danger" data-action="del" data-col="${i.collection}" data-slug="${esc(i.id)}">Sil</button>
+        </div></td>
+      </tr>`).join('');
+  }
+
+  function renderContent() {
+    const f = state.filters;
+    main.innerHTML = `
+      <div class="toolbar">
+        <select id="f-col" aria-label="Koleksiyon filtresi">
+          <option value="">Tüm türler</option>
+          ${Object.entries(COLS).map(([k, v]) => `<option value="${k}" ${f.col === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+        <select id="f-status" aria-label="Durum filtresi">
+          <option value="">Tüm durumlar</option>
+          ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+        <select id="f-lang" aria-label="Dil filtresi">
+          <option value="">Tüm diller</option>
+          ${Object.entries(LANG).map(([k, v]) => `<option value="${k}" ${f.lang === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+        <input type="search" id="f-q" placeholder="Ara…" value="${esc(f.q)}" aria-label="Ara">
+        <button class="btn primary" data-action="new">+ Yeni içerik</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Başlık</th><th>Tür</th><th>Dil</th><th>Durum</th><th>Yazar</th><th>Tarih</th><th>İşlemler</th></tr></thead>
+        <tbody id="rows">${rowsHTML()}</tbody>
+      </table></div>
+      <p class="small muted">Durum alanı bilinçli olarak kilitli: agent'lar ve bu form yalnız taslak üretir; yayın onay kuyruğundan geçer.</p>`;
+  }
+
+  function renderEditor() {
+    const e = state.editing;
+    const n = state.newDraft || {};
+    const d = e ? e.data : { title: n.title || '', excerpt: n.excerpt || '', status: 'draft', price: n.price || 0, stock: n.stock || 0, seoTitle: n.seoTitle || '', seoDesc: n.seoDesc || '', lang: n.lang || 'tr', translationOf: n.translationOf || '' };
+    const col = e ? e.collection : (n.col || 'blog');
+    const body = e ? e.body : (n.body || '');
+    main.innerHTML = `
+      <div class="editor">
+        <div class="status-line">
+          <span class="badge b-${d.status}">${STATUS[d.status]}</span>
+          <span class="small muted">${e ? esc(col) + '/' + esc(e.slug) : 'yeni kayıt'} — durum yalnız insan onayıyla değişir.</span>
+        </div>
+        <div class="grid2">
+          <div class="field"><label for="e-col">Koleksiyon</label>
+            <select id="e-col" ${e ? 'disabled' : ''}>
+              ${Object.entries(COLS).map(([k, v]) => `<option value="${k}" ${col === k ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></div>
+          <div class="field"><label for="e-title">Başlık</label><input id="e-title" value="${esc(d.title)}"></div>
+        </div>
+        <div class="field"><label for="e-excerpt">Özet</label><input id="e-excerpt" value="${esc(d.excerpt)}"></div>
+        <div class="grid2">
+          <div class="field"><label for="e-lang">Dil</label>
+            <select id="e-lang">
+              ${Object.entries(LANG).map(([k, v]) => `<option value="${k}" ${(d.lang || 'tr') === k ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></div>
+          <div class="field"><label for="e-translationOf">Çeviri — karşı dilin slug'ı</label><input id="e-translationOf" value="${esc(d.translationOf)}" placeholder="örn. cold-brew-oranlari"></div>
+        </div>
+        ${col === 'products' ? `
+        <div class="grid2">
+          <div class="field"><label for="e-price">Fiyat (₺)</label><input id="e-price" type="number" min="0" step="1" value="${Number(d.price) || 0}"></div>
+          <div class="field"><label for="e-stock">Stok</label><input id="e-stock" type="number" min="0" step="1" value="${Number(d.stock) || 0}"></div>
+        </div>` : ''}
+        <div class="field"><label for="e-body">Markdown gövde</label><textarea id="e-body">${esc(body)}</textarea></div>
+        <div class="grid2">
+          <div class="field"><label for="e-seoTitle">SEO başlığı</label><input id="e-seoTitle" value="${esc(d.seoTitle)}"></div>
+          <div class="field"><label for="e-seoDesc">SEO açıklaması</label><input id="e-seoDesc" value="${esc(d.seoDesc)}"></div>
+        </div>
+        <div class="editor-actions">
+          <button class="btn primary" data-action="save">Kaydet</button>
+          ${e && d.status !== 'published' ? `<button class="btn" data-action="pub" data-col="${col}" data-slug="${esc(e.slug)}">Yayın iste</button>` : ''}
+          <button class="btn" data-action="cancel">Vazgeç</button>
+        </div>
+      </div>`;
+    $('#e-col').addEventListener('change', () => {
+      if (state.editing) return;
+      state.newDraft = {
+        col: $('#e-col').value,
+        title: $('#e-title').value, excerpt: $('#e-excerpt').value, body: $('#e-body').value,
+        seoTitle: $('#e-seoTitle').value, seoDesc: $('#e-seoDesc').value,
+        lang: $('#e-lang').value, translationOf: $('#e-translationOf').value,
+        price: $('#e-price') ? Number($('#e-price').value) : 0,
+        stock: $('#e-stock') ? Number($('#e-stock').value) : 0,
+      };
+      renderEditor();
+    });
+  }
+
+  function renderTasks() {
+    const pending = state.tasks.filter((t) => t.status === 'approval');
+    const history = state.tasks.filter((t) => t.status !== 'approval').slice().reverse();
+    main.innerHTML = `
+      <h2>Onay bekleyen (${pending.length})</h2>
+      ${pending.length ? pending.map((t) => `
+        <div class="task-card">
+          <div><strong>${esc(t.title)}</strong><div class="small muted">${esc(t.collection)}/${esc(t.slug)} · ${fmtTs(t.ts)}</div></div>
+          <div class="row-actions">
+            <button class="btn small primary" data-action="approve" data-id="${esc(t.id)}">Onayla</button>
+            <button class="btn small danger" data-action="reject" data-id="${esc(t.id)}">Reddet</button>
+          </div>
+        </div>`).join('') : '<div class="empty">Kuyruk temiz — bekleyen yayın isteği yok.</div>'}
+      <h2>Geçmiş</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Başlık</th><th>Kayıt</th><th>Sonuç</th><th>Zaman</th></tr></thead>
+        <tbody>${history.length ? history.map((t) => `
+          <tr>
+            <td class="cell-title" data-label="Başlık">${esc(t.title)}</td>
+            <td data-label="Kayıt" class="small muted">${esc(t.collection)}/${esc(t.slug)}</td>
+            <td data-label="Sonuç"><span class="badge b-${t.status}">${t.status === 'done' ? 'Onaylandı' : 'Reddedildi'}</span></td>
+            <td data-label="Zaman" class="small muted">${fmtTs(t.ts)}</td>
+          </tr>`).join('') : '<tr><td colspan="4"><div class="empty">Henüz işlem yok.</div></td></tr>'}</tbody>
+      </table></div>`;
+  }
+
+  async function renderAudit() {
+    const log = await api('/api/audit?limit=50');
+    main.innerHTML = `
+      <div class="toolbar"><button class="btn" data-action="refresh">Yenile</button>
+      <span class="small muted">insan + agent eylemleri · son 50</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Zaman</th><th>Aktör</th><th>Eylem</th><th>Detay</th></tr></thead>
+        <tbody>${log.slice().reverse().map((a) => `
+          <tr>
+            <td data-label="Zaman" class="small muted">${fmtTs(a.ts)}</td>
+            <td data-label="Aktör"><span class="badge ${a.actor === 'human' ? 'b-done' : 'b-type'}">${a.actor === 'human' ? 'insan' : 'agent'}</span></td>
+            <td data-label="Eylem">${esc(a.action)}</td>
+            <td data-label="Detay" class="small muted">${esc(a.detail)}</td>
+          </tr>`).join('')}</tbody>
+      </table></div>`;
+  }
+
+  async function save() {
+    const col = $('#e-col').value;
+    const payload = {
+      title: $('#e-title').value.trim(),
+      excerpt: $('#e-excerpt').value,
+      body: $('#e-body').value,
+      seoTitle: $('#e-seoTitle').value,
+      seoDesc: $('#e-seoDesc').value,
+      lang: $('#e-lang').value,
+      translationOf: $('#e-translationOf').value.trim(),
+    };
+    if (!payload.title) return toast('Başlık zorunlu', 'err');
+    if (col === 'products') {
+      payload.price = Number($('#e-price').value) || 0;
+      payload.stock = Number($('#e-stock').value) || 0;
+    }
+    if (state.editing) {
+      await api(`/api/content/${state.editing.collection}/${state.editing.slug}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Kaydedildi', 'ok');
+    } else {
+      payload.collection = col;
+      const r = await api('/api/content', { method: 'POST', body: JSON.stringify(payload) });
+      toast('Taslak oluşturuldu: ' + r.slug, 'ok');
+    }
+    state.view = 'content'; state.editing = null; state.newDraft = null;
+    await loadAll();
+  }
+
+  document.addEventListener('click', async (ev) => {
+    const t = ev.target.closest('[data-action]');
+    if (!t) return;
+    const a = t.dataset.action;
+    try {
+      if (a === 'tab') { state.view = t.dataset.view; state.editing = null; render(); }
+      else if (a === 'new') { state.editing = null; state.newDraft = null; state.view = 'editor'; render(); }
+      else if (a === 'cancel') { state.view = 'content'; state.editing = null; render(); }
+      else if (a === 'edit') {
+        const r = await api(`/api/content/${t.dataset.col}/${t.dataset.slug}`);
+        state.editing = { collection: t.dataset.col, slug: t.dataset.slug, data: r.data, body: r.body };
+        state.view = 'editor'; render();
+      }
+      else if (a === 'save') await save();
+      else if (a === 'pub') {
+        const r = await api('/api/publish', { method: 'POST', body: JSON.stringify({ collection: t.dataset.col, slug: t.dataset.slug }) });
+        toast(r.note || 'Onay kuyruğuna eklendi', r.note ? '' : 'ok');
+        await loadAll();
+      }
+      else if (a === 'del') {
+        if (!confirm(`${t.dataset.col}/${t.dataset.slug} silinsin mi? Geri alınamaz.`)) return;
+        await api(`/api/content/${t.dataset.col}/${t.dataset.slug}`, { method: 'DELETE' });
+        toast('Silindi', 'ok'); await loadAll();
+      }
+      else if (a === 'approve') {
+        const r = await api(`/api/tasks/${t.dataset.id}/approve`, { method: 'POST' });
+        toast('Yayınlandı: ' + r.published, 'ok'); await loadAll();
+      }
+      else if (a === 'reject') {
+        await api(`/api/tasks/${t.dataset.id}/reject`, { method: 'POST' });
+        toast('Reddedildi — taslak kaldı'); await loadAll();
+      }
+      else if (a === 'refresh') await renderAudit();
+      else if (a === 'theme') {
+        const root = document.documentElement;
+        const cur = root.style.colorScheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        const next = cur === 'dark' ? 'light' : 'dark';
+        root.style.colorScheme = next;
+        localStorage.setItem('ap-theme', next);
+      }
+      else if (a === 'build') {
+        const btn = $('#build-btn');
+        btn.disabled = true; btn.textContent = 'Derleniyor…';
+        $('#build-state').textContent = 'astro build çalışıyor…';
+        try {
+          const r = await api('/api/build', { method: 'POST' });
+          $('#build-state').textContent = (r.ok ? 'Son build: OK · ' : 'Son build: FAIL · ') + new Date().toLocaleTimeString('tr-TR');
+          toast(r.ok ? 'Build OK — /site/ güncel' : 'Build FAIL: ' + r.tail, r.ok ? 'ok' : 'err');
+        } finally { btn.disabled = false; btn.textContent = 'Build al'; }
+        await loadAll();
+      }
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  document.addEventListener('input', (ev) => {
+    if (ev.target.id === 'f-q') { state.filters.q = ev.target.value; $('#rows').innerHTML = rowsHTML(); }
+  });
+  document.addEventListener('change', (ev) => {
+    if (ev.target.id === 'f-col') { state.filters.col = ev.target.value; $('#rows').innerHTML = rowsHTML(); }
+    if (ev.target.id === 'f-status') { state.filters.status = ev.target.value; $('#rows').innerHTML = rowsHTML(); }
+    if (ev.target.id === 'f-lang') { state.filters.lang = ev.target.value; $('#rows').innerHTML = rowsHTML(); }
+  });
+
+  const savedTheme = localStorage.getItem('ap-theme');
+  if (savedTheme) document.documentElement.style.colorScheme = savedTheme;
+
+  loadAll().catch((e) => toast(e.message, 'err'));
+})();
+</script>
+</body>
+</html>

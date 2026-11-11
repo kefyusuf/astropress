@@ -1,0 +1,38 @@
+---
+import Base from '../../layouts/Base.astro';
+import { publishedIn } from '../../lib/i18n';
+const posts = (await publishedIn('blog', 'en'))
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+const products = await publishedIn('products', 'en');
+---
+<Base title="Köz Kahve — third-wave coffee, roasted right" lang="en" altHref="/">
+  <section class="hero">
+    <span class="kicker">Small batch · direct trade</span>
+    <h1>Third-wave coffee, <em>roasted right.</em></h1>
+    <p>Traceable supply from bean to cup; a separate roast profile for every batch. A fast, static store managed with agents, built on Astro.</p>
+  </section>
+
+  <div class="sec-h" id="products"><h2>Featured beans</h2><span>{products.length} products · stock in sync</span></div>
+  <div class="grid">
+    {products.map((p) => (
+      <div class="card">
+        <h3><a href={`/en/products/${p.id}/`}>{p.data.title}</a></h3>
+        <p>{p.data.excerpt}</p>
+        <span class="price">₺{p.data.price}</span>
+      </div>
+    ))}
+  </div>
+
+  <div class="sec-h" id="blog"><h2>Latest from the blog</h2><span>agent + human co-production</span></div>
+  <div class="post-list">
+    {posts.map((p) => (
+      <a class="post-row" href={`/en/blog/${p.id}/`}>
+        <span class="date">{p.data.date.toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}</span>
+        <span>
+          <h3>{p.data.title}</h3>
+          <p>{p.data.excerpt}</p>
+        </span>
+      </a>
+    ))}
+  </div>
+</Base>
