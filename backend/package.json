@@ -1,0 +1,27 @@
+{
+  "name": "@astropress/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AstroPress agent-native CMS backend: NestJS + clean architecture (ports/adapters). İlk slice: çoklu site registry + site-başı locale config.",
+  "license": "MIT",
+  "author": "Yusuf KEF <kefyusuf@gmail.com>",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/test/**/*.spec.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
