@@ -1,19 +1,12 @@
 ---
-import { getCollection, render } from 'astro:content';
-import Base from '../layouts/Base.astro';
-import { altHref } from '../lib/i18n';
+import { getCollection } from 'astro:content';
+import EntryView from '../components/EntryView.astro';
+import { defaultLocale } from '../lib/site.config';
+import { langOf } from '../lib/i18n';
 export async function getStaticPaths() {
-  const pages = await getCollection('pages', ({ data }) => data.status === 'published' && data.lang !== 'en');
+  const pages = await getCollection('pages', (entry) => entry.data.status === 'published' && langOf(entry) === defaultLocale);
   return pages.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
 }
 const { entry } = Astro.props;
-const { Content } = await render(entry);
-const alt = await altHref('pages', entry);
 ---
-<Base title={entry.data.seoTitle || entry.data.title} description={entry.data.seoDesc || entry.data.excerpt} lang="tr" altHref={alt}>
-  <article class="prose">
-    <div class="meta"><span class="badge">Sayfa</span></div>
-    <h1>{entry.data.title}</h1>
-    <Content />
-  </article>
-</Base>
+<EntryView collection="pages" entry={entry} lang={defaultLocale} />
