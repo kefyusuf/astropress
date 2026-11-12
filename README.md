@@ -91,7 +91,7 @@ domain hataları `DomainExceptionFilter` ile HTTP kodlarına çevrilir (doğrula
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 41 kontrol (HTTP e2e dahil)
+npm --prefix backend test                                      # 63 kontrol (e2e + contract + bridge)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -101,8 +101,26 @@ npm --prefix backend test                                      # 41 kontrol (HTT
 | `GET /sites/:id` | Tek site getirir | 200 | 404 yok |
 | `PUT /sites/:id/locales` | Locale + ana dili günceller (`{locales,defaultLocale}`) | 200 | 400 geçersiz · 404 yok |
 
-- **Tek kaynak:** file modunda committed `sites.json`'ı okur/yazar (tek yazar backend); `ASTROPRESS_STORAGE=memory` geçici (test/development).
-- `ASTROPRESS_SITES_FILE` dosya yolunu override eder (test izolasyonu); `PORT` portu belirler.
+### Depolama (storage) — `ASTROPRESS_STORAGE`
+
+| Mod | Yetkili kaynak (source of truth) | Kalıcılık | Kullanım |
+|---|---|---|---|
+| `file` (varsayılan) | committed `sites.json` | git-native | üretim varsayılanı; tek yazar backend |
+| `memory` | RAM | geçici (process ömrü) | test / hızlı development |
+| `sqlite` | `.astropress/sites.db` | runtime state (gitignore'lu) | ölçek/çok-yazar gerektiğinde opt-in |
+
+**Model A — tek kaynak:** root Astro build **her zaman** `sites.json`'ı okur (F0 temeli; canlı servise bağımlılık yok).
+`sqlite` modunda DB runtime kaynağıdır; build'den önce `export` ile `sites.json`'a geri yazılır. `seed`/`export`
+köprüsü veriyi json ↔ DB arasında taşır (idempotent upsert):
+
+```bash
+ASTROPRESS_STORAGE=sqlite npm --prefix backend run seed     # sites.json → DB (önce build gerekir)
+ASTROPRESS_STORAGE=sqlite npm --prefix backend run export   # DB → sites.json (root build bunu okur)
+```
+
+- Env override: `ASTROPRESS_SITES_FILE` (json yolu), `ASTROPRESS_DB_FILE` (db yolu) — test izolasyonu; `PORT` portu belirler.
+- `sqlite` adapter'ı **better-sqlite3 ^12** (prebuilt binary; node 20/22/24). Üç adapter (`memory`/`file`/`sqlite`)
+  aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
 - Bu slice yerel geliştirme içindir; henüz auth/RBAC yok — MCP köprüsündeki guardrail'ler backend'e sonraki P2 adımlarında taşınır.
 
 ## Dizin yapısı
@@ -133,8 +151,9 @@ npm --prefix backend test                                      # 41 kontrol (HTT
 │   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
 │   ├── src/sites/            # domain ← application (use-case/ports) ← infrastructure (adapter)
 │   │   ├── sites.controller.ts   # GET/POST /sites · GET /sites/:id · PUT /sites/:id/locales
-│   │   └── infrastructure/       # FileSiteRepository (git-native) + exception filter
-│   └── test/sites/           # node:test: domain/DI/file/HTTP e2e + registry contract (41)
+│   │   └── infrastructure/       # File (git-native) · Sqlite (better-sqlite3) · filter · registry-bridge
+│   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
+│   └── test/sites/           # node:test: domain/DI/file/sqlite/HTTP e2e + contract + bridge (63)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -247,9 +266,10 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   koşar: ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
   (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
-- **Backend (`npm run backend:ci`):** NestJS sites slice **41 kontrol** (domain + use-case + DI + file adapter
-  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409) + **registry contract**: committed
-  `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
+- **Backend (`npm run backend:ci`):** NestJS sites slice **63 kontrol** (domain + use-case + DI + file/sqlite adapter
+  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file ve sqlite modları) + **paylaşımlı contract**
+  (üç adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
+  committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
   önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
@@ -295,9 +315,9 @@ MCP köprüsü üzerinden yapılır.
 4. ~~Rol tabanlı erişim kontrolü (agent yetki matrisi, sunucu tarafı RBAC)~~ ✔
 5. ~~i18n (TR/EN) — içerik çevirileri + `/en/` rotaları + dil değiştirici~~ ✔
 6. ~~Test altyapısı (`node:test`) + CI (node 20/22/24) + MIT lisans + proje kimliği~~ ✔
-7. **Çoklu site registry + yönetim HTTP API** (NestJS backend, P1/P2.1) ✔; isteğe bağlı DB backend'i.
-   Depolama bilinçli olarak dosya tabanlı (Markdown + JSON, git-native); ölçek gerektiğinde SQLite/Postgres
-   opsiyonel bir katman olarak eklenebilir.
+7. **Çoklu site registry + yönetim HTTP API** (NestJS backend, P1/P2.1) ✔; **SQLite adapter + seed/export köprüsü** (P2.2a) ✔.
+   Depolama varsayılan olarak dosya tabanlı (Markdown + JSON, git-native); `sqlite` opt-in katman olarak eklendi
+   (üç adapter aynı contract'tan geçer). Postgres (P2.2b) ölçek gerektiğinde opsiyonel bir sonraki katman.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
 

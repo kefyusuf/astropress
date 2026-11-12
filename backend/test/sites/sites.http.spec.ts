@@ -8,9 +8,9 @@ import { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 
-// P2.1 HTTP API e2e: gerçek express sunucusu (rastgele port) + gerçek fetch.
-// Her test izole temp sites.json üzerinde koşar; committed config'e dokunmaz.
-const orig = { storage: process.env.ASTROPRESS_STORAGE, file: process.env.ASTROPRESS_SITES_FILE };
+// P2.1/P2.2 HTTP API e2e: gerçek express sunucusu (rastgele port) + gerçek fetch.
+// Her test izole temp storage (file: sites.json · sqlite: sites.db) üzerinde koşar; committed config'e dokunmaz.
+const orig = { storage: process.env.ASTROPRESS_STORAGE, file: process.env.ASTROPRESS_SITES_FILE, dbFile: process.env.ASTROPRESS_DB_FILE };
 let cleanup: (() => Promise<void>) | null = null;
 
 afterEach(async () => {
@@ -19,13 +19,15 @@ afterEach(async () => {
   else process.env.ASTROPRESS_STORAGE = orig.storage;
   if (orig.file === undefined) delete process.env.ASTROPRESS_SITES_FILE;
   else process.env.ASTROPRESS_SITES_FILE = orig.file;
+  if (orig.dbFile === undefined) delete process.env.ASTROPRESS_DB_FILE;
+  else process.env.ASTROPRESS_DB_FILE = orig.dbFile;
 });
 
-async function boot(): Promise<string> {
+async function boot(mode: 'file' | 'sqlite' = 'file'): Promise<string> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-http-'));
-  const file = path.join(dir, 'sites.json');
-  process.env.ASTROPRESS_STORAGE = 'file';
-  process.env.ASTROPRESS_SITES_FILE = file;
+  process.env.ASTROPRESS_STORAGE = mode;
+  process.env.ASTROPRESS_SITES_FILE = path.join(dir, 'sites.json');
+  process.env.ASTROPRESS_DB_FILE = path.join(dir, 'sites.db');
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
   await app.listen(0);
@@ -119,4 +121,17 @@ test('PUT /sites/:id/locales geçersiz → 400', async () => {
   await send(`${url}/sites`, 'POST', valid);
   const res = await send(`${url}/sites/kahve/locales`, 'PUT', { locales: ['tr'], defaultLocale: 'en' });
   assert.equal(res.status, 400);
+});
+
+test('HTTP API sqlite modunda: POST → GET → PUT zinciri (controller→use-case→DB)', async () => {
+  const url = await boot('sqlite');
+  assert.deepEqual(await (await fetch(`${url}/sites`)).json(), []);
+  assert.equal((await send(`${url}/sites`, 'POST', valid)).status, 201);
+  const found = await fetch(`${url}/sites/kahve`);
+  assert.equal(found.status, 200);
+  assert.deepEqual(await found.json(), valid);
+  const put = await send(`${url}/sites/kahve/locales`, 'PUT', { locales: ['en', 'tr'], defaultLocale: 'en' });
+  assert.equal(put.status, 200);
+  assert.deepEqual(await put.json(), { id: 'kahve', name: 'Kahve', locales: ['en', 'tr'], defaultLocale: 'en' });
+  assert.equal((await fetch(`${url}/sites/yok`)).status, 404);
 });
