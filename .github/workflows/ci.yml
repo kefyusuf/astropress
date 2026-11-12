@@ -27,3 +27,5 @@ jobs:
         run: npm test
       - name: End-to-end smoke (guardrail + RBAC + i18n)
         run: npm run smoke
+      - name: Backend deps + tests (NestJS sites slice + registry contract)
+        run: npm run backend:ci

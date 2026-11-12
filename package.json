@@ -30,7 +30,8 @@
     "admin": "node mcp/http.mjs",
     "smoke": "node mcp/smoke.mjs",
     "test": "node --test \"test/*.test.mjs\"",
-    "ci": "npm run build && npm test && npm run smoke"
+    "backend:ci": "npm --prefix backend ci && npm --prefix backend test",
+    "ci": "npm run build && npm test && npm run smoke && npm run backend:ci"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

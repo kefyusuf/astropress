@@ -65,7 +65,7 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 | `npm run admin` | Yönetim arayüzü + `/api` + `/site/` (`127.0.0.1:4322`) |
 | `npm test` | `node:test` birim + entegrasyon (30 kontrol, izole) |
 | `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
-| `npm run ci` | `build && test && smoke` — CI'ın yerel eşdeğeri |
+| `npm run ci` | `build && test && smoke && backend:ci` — CI'ın yerel eşdeğeri |
 
 ## Docker ile geliştirme
 
@@ -216,7 +216,10 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   koşar: ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
   (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
-- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke`.
+- **Backend (`npm run backend:ci`):** NestJS sites slice **33 kontrol** (domain + use-case + DI + file adapter)
+  + **registry contract**: committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız.
+  Config'in bozuk edit'leri build'den önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
+- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
 ## Yönetim arayüzü (`npm run admin`)
