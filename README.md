@@ -67,6 +67,21 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 | `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
 | `npm run ci` | `build && test && smoke` — CI'ın yerel eşdeğeri |
 
+## Docker ile geliştirme
+
+Tek imaj, üç servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (tsc watch).
+
+```bash
+docker compose up --build                  # web + admin + backend
+docker compose run --rm backend npm test   # backend testleri container içinde
+docker compose down
+```
+
+- **Config tek kaynak:** `sites.json` web/admin'e **read-only** mount edilir; tek yazar `backend`. Config sahipliği container seviyesinde de korunur.
+- **State ayrı:** `.astropress/` (audit/tasks) admin'e read-write; config ile karışmaz.
+- `ASTROPRESS_SITE` ile site seçilir (boşsa ilk site); `HOST=0.0.0.0` admin'i container dışına açar.
+- Backend HTTP API'si P2'de gelir; o zamana dek `backend` servisi watch-compile + test çalıştırır.
+
 ## Dizin yapısı
 
 ```

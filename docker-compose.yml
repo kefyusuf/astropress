@@ -1,0 +1,41 @@
+# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (tsc watch).
+# Config tek kaynak: sites.json tüketicilere (web/admin) read-only, tek yazar backend.
+# State (.astropress: audit/tasks) admin'e read-write; config ile karışmaz.
+services:
+  web:
+    build: .
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "4321:4321"
+    environment:
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+  admin:
+    build: .
+    command: node mcp/http.mjs
+    ports:
+      - "4322:4322"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4322"
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+      - ./.astropress:/app/.astropress
+  backend:
+    build: .
+    command: npm --prefix backend run dev
+    environment:
+      ASTROPRESS_STORAGE: file
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules

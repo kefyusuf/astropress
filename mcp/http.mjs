@@ -9,6 +9,8 @@ import { site } from './config.mjs';
 const HP = HUMAN.perms;
 
 const PORT = Number(process.env.PORT || 4322);
+// Container'da host'tan erişim için 0.0.0.0 gerekir; lokalde varsayılan loopback.
+const HOST = process.env.HOST || '127.0.0.1';
 const ADMIN = path.join(ROOT, 'admin', 'index.html');
 const DIST = path.join(ROOT, 'dist');
 
@@ -105,6 +107,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log('AstroPress admin → http://127.0.0.1:' + PORT + '/  (site önizleme: /site/)');
 });
