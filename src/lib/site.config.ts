@@ -1,14 +1,18 @@
-// Tek doğruluk kaynağı (single source of truth): site kimliği + locale yapılandırması.
-// defaultLocale kökte (öneksiz), diğerleri /<locale> altında. Mevcut site TR-default.
-// defaultLocale'i değiştirince kök dili otomatik flip olur (route'lar config'den türer).
-export const siteConfig = {
-  id: 'kozkahve',
-  name: 'Köz Kahve',
-  defaultLocale: 'tr',
-  locales: ['tr', 'en'],
-} as const;
+// Tek doğruluk kaynağı: repo kökündeki COMMITTED sites.json (backend FileSiteRepository yazar).
+// .astropress/ yalnız runtime state (audit/tasks) tutar; config orada DEĞİL.
+// defaultLocale kökte (öneksiz), diğerleri /<locale> altında. Mevcut site ASTROPRESS_SITE ile seçilir (yoksa ilk).
+import sites from '../../sites.json';
 
-export type Locale = (typeof siteConfig.locales)[number];
+const current = sites.find((s) => s.id === process.env.ASTROPRESS_SITE) ?? sites[0];
+
+export const siteConfig = {
+  id: current.id,
+  name: current.name,
+  defaultLocale: current.defaultLocale,
+  locales: current.locales,
+};
+
+export type Locale = string;
 
 export const defaultLocale: Locale = siteConfig.defaultLocale;
 export const locales: readonly Locale[] = siteConfig.locales;

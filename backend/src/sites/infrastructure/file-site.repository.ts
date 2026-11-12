@@ -6,9 +6,19 @@ import { SiteRepository } from '../application/ports';
 
 export const SITES_FILE = Symbol('SITES_FILE');
 
-// Git-native varsayılan: insan-okunur JSON. Testler ASTROPRESS_SITES_FILE ile temp'e yönlendirir.
+// Tek doğruluk kaynağı repo kökünde COMMITTED sites.json (config katmanı).
+// .astropress/ yalnız runtime state (audit/tasks) tutar ve ignore'lu kalır — config orada değil.
+// Repo kökü, modül konumundan astro.config.mjs işaretçisine yürüyerek bulunur (cwd/dist derinliğinden bağımsız).
+// Testler ASTROPRESS_SITES_FILE ile temp'e yönlendirir.
 export function defaultSitesFile(): string {
-  return process.env.ASTROPRESS_SITES_FILE || path.join(process.cwd(), '.astropress', 'sites.json');
+  if (process.env.ASTROPRESS_SITES_FILE) return process.env.ASTROPRESS_SITES_FILE;
+  let dir = __dirname;
+  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return path.join(dir, 'sites.json');
 }
 
 @Injectable()

@@ -12,7 +12,7 @@ const base = {
   date: z.coerce.date(),
   seoTitle: z.string().default(''),
   seoDesc: z.string().default(''),
-  lang: z.enum(siteConfig.locales).default(siteConfig.defaultLocale),
+  lang: z.enum(siteConfig.locales as [string, ...string[]]).default(siteConfig.defaultLocale),
   translationOf: z.string().default(''),
 };
 
