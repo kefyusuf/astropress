@@ -4,6 +4,7 @@ import path from 'node:path';
 import * as ops from './ops.mjs';
 import { ROOT } from './store.mjs';
 import { HUMAN, listAgents } from './auth.mjs';
+import { site } from './config.mjs';
 
 const HP = HUMAN.perms;
 
@@ -88,6 +89,7 @@ async function api(req, res, url) {
   if (p === '/api/build' && method === 'POST') return json(res, 200, ops.build('human'));
   if (p === '/api/audit' && method === 'GET') return json(res, 200, ops.audit({ limit: Number(q.get('limit')) || 50 }));
   if (p === '/api/agents' && method === 'GET') return json(res, 200, listAgents());
+  if (p === '/api/config' && method === 'GET') return json(res, 200, site);
   return json(res, 404, { error: 'Bilinmeyen API rotası: ' + method + ' ' + p });
 }
 

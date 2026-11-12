@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as ops from './ops.mjs';
 import { getAgent } from './auth.mjs';
+import { locales } from './config.mjs';
 
 const server = new McpServer({ name: 'astropress', version: '0.1.0' });
 const col = z.enum(['blog', 'products', 'pages']);
@@ -35,12 +36,12 @@ server.registerTool('read_content', {
 
 server.registerTool('create_content', {
   description: 'Yeni içerik oluşturur. Guardrail: durum her zaman "draft"; yayına alma insan onayı gerektirir.',
-  inputSchema: { collection: col, title: z.string(), excerpt: z.string().optional(), body: z.string().optional(), author: z.string().optional(), lang: z.enum(['tr', 'en']).optional(), translationOf: z.string().optional() },
+  inputSchema: { collection: col, title: z.string(), excerpt: z.string().optional(), body: z.string().optional(), author: z.string().optional(), lang: z.enum(locales).optional(), translationOf: z.string().optional() },
 }, async (args) => txt(ops.create(args, KIND, P)));
 
 server.registerTool('update_content', {
   description: 'Mevcut içeriği günceller. Guardrail: status değiştirilemez; price/stock commerce yetkisi ister (RBAC).',
-  inputSchema: { collection: col, slug: z.string(), title: z.string().optional(), excerpt: z.string().optional(), body: z.string().optional(), seoTitle: z.string().optional(), seoDesc: z.string().optional(), price: z.number().optional(), stock: z.number().optional(), lang: z.enum(['tr', 'en']).optional(), translationOf: z.string().optional() },
+  inputSchema: { collection: col, slug: z.string(), title: z.string().optional(), excerpt: z.string().optional(), body: z.string().optional(), seoTitle: z.string().optional(), seoDesc: z.string().optional(), price: z.number().optional(), stock: z.number().optional(), lang: z.enum(locales).optional(), translationOf: z.string().optional() },
 }, async (args) => txt(ops.update(args, KIND, P)));
 
 server.registerTool('delete_content', {
