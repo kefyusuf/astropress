@@ -1,4 +1,4 @@
-# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (tsc watch).
+# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API).
 # Config tek kaynak: sites.json tüketicilere (web/admin) read-only, tek yazar backend.
 # State (.astropress: audit/tasks) admin'e read-write; config ile karışmaz.
 services:
@@ -31,10 +31,13 @@ services:
       - ./.astropress:/app/.astropress
   backend:
     build: .
-    command: npm --prefix backend run dev
+    command: sh -c "npm --prefix backend run build && npm --prefix backend run start"
+    ports:
+      - "3000:3000"
     environment:
       ASTROPRESS_STORAGE: file
       ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+      PORT: "3000"
     volumes:
       - .:/app
       - /app/node_modules

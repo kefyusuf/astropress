@@ -6,8 +6,10 @@ import { RegisterSite } from './application/register-site';
 import { ConfigureSiteLocales } from './application/configure-site-locales';
 import { GetSite } from './application/get-site';
 import { ListSites } from './application/list-sites';
+import { SitesController } from './sites.controller';
 
 @Module({
+  controllers: [SitesController],
   providers: [
     { provide: SITES_FILE, useFactory: () => defaultSitesFile() },
     {

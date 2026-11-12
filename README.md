@@ -69,7 +69,7 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 
 ## Docker ile geliştirme
 
-Tek imaj, üç servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (tsc watch).
+Tek imaj, üç servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000).
 
 ```bash
 docker compose up --build                  # web + admin + backend
@@ -80,12 +80,36 @@ docker compose down
 - **Config tek kaynak:** `sites.json` web/admin'e **read-only** mount edilir; tek yazar `backend`. Config sahipliği container seviyesinde de korunur.
 - **State ayrı:** `.astropress/` (audit/tasks) admin'e read-write; config ile karışmaz.
 - `ASTROPRESS_SITE` ile site seçilir (boşsa ilk site); `HOST=0.0.0.0` admin'i container dışına açar.
-- Backend HTTP API'si P2'de gelir; o zamana dek `backend` servisi watch-compile + test çalıştırır.
+- `backend` servisi NestJS HTTP API'sini `3000` portunda sunar (`PORT` ile değişir); `sites.json`'a tek yazar odur.
+- **Bağımlılık değişince** `docker compose up --build -V`: anonymous `node_modules` volume'leri imajdan yenilenir; yoksa eski volume yeni paketleri maskeler (ör. `platform-express` → "No driver (HTTP)" hatası).
+
+## Backend HTTP API (NestJS)
+
+`backend/` ayrı bir workspace: clean architecture (domain ← application use-case/ports ← infrastructure
+adapter). İlk slice çoklu site registry + site-başı locale config. Controller → use-case → domain;
+domain hataları `DomainExceptionFilter` ile HTTP kodlarına çevrilir (doğrulama tek yerde: domain).
+
+```bash
+npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
+npm --prefix backend test                                      # 41 kontrol (HTTP e2e dahil)
+```
+
+| Endpoint | Ne yapar | Başarı | Hata |
+|---|---|---|---|
+| `GET /sites` | Tüm siteleri listeler | 200 | — |
+| `POST /sites` | Yeni site kaydeder (`{id,name,locales,defaultLocale}`) | 201 | 400 geçersiz · 409 zaten var |
+| `GET /sites/:id` | Tek site getirir | 200 | 404 yok |
+| `PUT /sites/:id/locales` | Locale + ana dili günceller (`{locales,defaultLocale}`) | 200 | 400 geçersiz · 404 yok |
+
+- **Tek kaynak:** file modunda committed `sites.json`'ı okur/yazar (tek yazar backend); `ASTROPRESS_STORAGE=memory` geçici (test/development).
+- `ASTROPRESS_SITES_FILE` dosya yolunu override eder (test izolasyonu); `PORT` portu belirler.
+- Bu slice yerel geliştirme içindir; henüz auth/RBAC yok — MCP köprüsündeki guardrail'ler backend'e sonraki P2 adımlarında taşınır.
 
 ## Dizin yapısı
 
 ```
 ├── astro.config.mjs          # site, output: static
+├── sites.json                # COMMITTED tek kaynak: site registry (config; tek yazar backend)
 ├── src/
 │   ├── content.config.ts     # blog / products / pages collection şemaları (zod)
 │   ├── content/              # Markdown içerik (frontmatter = CMS alanları)
@@ -104,6 +128,13 @@ docker compose down
 │   ├── http.mjs              # HTTP köprüsü: admin arayüzü + /api + /site/ (127.0.0.1)
 │   ├── store.mjs             # Markdown okuma/yazma, slug, state, audit
 │   └── smoke.mjs             # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
+├── backend/                  # NestJS + clean architecture (ayrı workspace, HTTP API)
+│   ├── src/main.ts           # HTTP bootstrap (PORT, varsayılan 3000)
+│   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
+│   ├── src/sites/            # domain ← application (use-case/ports) ← infrastructure (adapter)
+│   │   ├── sites.controller.ts   # GET/POST /sites · GET /sites/:id · PUT /sites/:id/locales
+│   │   └── infrastructure/       # FileSiteRepository (git-native) + exception filter
+│   └── test/sites/           # node:test: domain/DI/file/HTTP e2e + registry contract (41)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -216,9 +247,10 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   koşar: ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
   (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
-- **Backend (`npm run backend:ci`):** NestJS sites slice **33 kontrol** (domain + use-case + DI + file adapter)
-  + **registry contract**: committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız.
-  Config'in bozuk edit'leri build'den önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
+- **Backend (`npm run backend:ci`):** NestJS sites slice **41 kontrol** (domain + use-case + DI + file adapter
+  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409) + **registry contract**: committed
+  `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
+  önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
@@ -263,8 +295,9 @@ MCP köprüsü üzerinden yapılır.
 4. ~~Rol tabanlı erişim kontrolü (agent yetki matrisi, sunucu tarafı RBAC)~~ ✔
 5. ~~i18n (TR/EN) — içerik çevirileri + `/en/` rotaları + dil değiştirici~~ ✔
 6. ~~Test altyapısı (`node:test`) + CI (node 20/22/24) + MIT lisans + proje kimliği~~ ✔
-7. **Çoklu site desteği** + isteğe bağlı DB backend'i. Depolama bilinçli olarak dosya tabanlı
-   (Markdown + JSON, git-native); ölçek gerektiğinde SQLite/Postgres opsiyonel bir katman olarak eklenebilir.
+7. **Çoklu site registry + yönetim HTTP API** (NestJS backend, P1/P2.1) ✔; isteğe bağlı DB backend'i.
+   Depolama bilinçli olarak dosya tabanlı (Markdown + JSON, git-native); ölçek gerektiğinde SQLite/Postgres
+   opsiyonel bir katman olarak eklenebilir.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
 
