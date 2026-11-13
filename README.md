@@ -67,7 +67,7 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 | `npm test` | `node:test` birim + entegrasyon (30 kontrol, izole) |
 | `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
 | `npm run smoke:http` | HTTP transport uçtan uca smoke (20 kontrol, gerçek build) |
-| `npm run ci` | `build && test && smoke && backend:ci` — CI'ın yerel eşdeğeri |
+| `npm run ci` | `build && test && smoke && smoke:http && backend:ci` — CI'ın yerel eşdeğeri |
 
 ## Docker ile geliştirme
 
@@ -294,7 +294,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   (üç adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
   önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
-- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → backend:ci`.
+- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
 ## Yönetim arayüzü (`npm run admin`)
