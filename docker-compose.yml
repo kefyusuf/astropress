@@ -1,6 +1,6 @@
-# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API).
-# Config tek kaynak: sites.json tüketicilere (web/admin) read-only, tek yazar backend.
-# State (.astropress: audit/tasks) admin'e read-write; config ile karışmaz.
+# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API) + mcp-http (MCP Streamable HTTP).
+# Config tek kaynak: sites.json tüketicilere (web/admin/mcp-http) read-only, tek yazar backend.
+# State (.astropress: audit/tasks) admin + mcp-http'ye read-write; config ile karışmaz.
 services:
   web:
     build: .
@@ -42,3 +42,19 @@ services:
       - .:/app
       - /app/node_modules
       - /app/backend/node_modules
+  mcp-http:
+    build: .
+    command: node mcp/http-server.mjs
+    ports:
+      - "4323:4323"
+    environment:
+      HOST: 0.0.0.0
+      MCP_PORT: "4323"
+      MCP_ALLOW_ANY_HOST: "1"
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+      - ./.astropress:/app/.astropress
