@@ -62,9 +62,11 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 | `npm run build` | `astro build` → `dist/` (yalnız published) |
 | `npm run preview` | `dist/` üzerinden statik önizleme |
 | `npm run mcp` | MCP stdio sunucusu (agent köprüsü) |
+| `npm run mcp:http` | MCP Streamable HTTP sunucusu (`127.0.0.1:4323`, P2.3) |
 | `npm run admin` | Yönetim arayüzü + `/api` + `/site/` (`127.0.0.1:4322`) |
 | `npm test` | `node:test` birim + entegrasyon (30 kontrol, izole) |
 | `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
+| `npm run smoke:http` | HTTP transport uçtan uca smoke (20 kontrol, gerçek build) |
 | `npm run ci` | `build && test && smoke && backend:ci` — CI'ın yerel eşdeğeri |
 
 ## Docker ile geliştirme
@@ -82,6 +84,22 @@ docker compose down
 - `ASTROPRESS_SITE` ile site seçilir (boşsa ilk site); `HOST=0.0.0.0` admin'i container dışına açar.
 - `backend` servisi NestJS HTTP API'sini `3000` portunda sunar (`PORT` ile değişir); `sites.json`'a tek yazar odur.
 - **Bağımlılık değişince** `docker compose up --build -V`: anonymous `node_modules` volume'leri imajdan yenilenir; yoksa eski volume yeni paketleri maskeler (ör. `platform-express` → "No driver (HTTP)" hatası).
+
+## MCP HTTP Transport (Streamable HTTP, P2.3)
+
+MCP sunucusu stdio'ya ek olarak HTTP üzerinden de açılır (`mcp/http-server.mjs`). stdio (`npm run mcp`)
+ve admin REST (`npm run admin`, :4322) **değişmeden korunur**; üçü de `mcp/ops.mjs` (guardrail+RBAC) paylaşır,
+stdio + HTTP MCP ayrıca `createMcpServer(agent)` factory'sini kullanır.
+
+```bash
+npm run mcp:http     # http://127.0.0.1:4323/mcp  (MCP_PORT, HOST override)
+npm run smoke:http   # HTTP üzerinden guardrail + RBAC + i18n smoke
+```
+
+- **Transport:** Streamable HTTP (güncel MCP spec), tek `/mcp` endpoint (POST/GET/DELETE), stateful session (`Mcp-Session-Id`).
+- **Kimlik:** initialize'da `X-Astropress-Agent: <id>` header → agent registry (`agents.json`), varsayılan `content-studio`. **auto-HUMAN yok** → guardrail korunur (agent self-publish yapamaz).
+- **Güvenlik:** loopback bind + Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, değilse 403). Container'da `HOST=0.0.0.0` + `MCP_ALLOW_ANY_HOST=1`. Production auth (token/OAuth) sonraki faz.
+- **Fazlar:** P2.3 stateful in-memory + header kimlik (local dev) → Faz 2 token/OAuth → Faz 3 EventStore/resumability + rate-limit → Faz 4 backend yakınsaması.
 
 ## Backend HTTP API (NestJS)
 
@@ -142,10 +160,13 @@ ASTROPRESS_STORAGE=sqlite npm --prefix backend run export   # DB → sites.json 
 │   ├── ops.mjs               # TEK guardrail + RBAC kaynağı: tüm iş mantığı (MCP + HTTP paylaşır)
 │   ├── auth.mjs              # agent kimliği (env) + yetki matrisi + insan yetkileri
 │   ├── agents.json           # agent kayıt defteri (yetki matrisi)
-│   ├── server.mjs            # MCP stdio sunucusu — 12 tool (ince kayıt katmanı)
+│   ├── factory.mjs           # createMcpServer(agent) — 12 tool kaydı (stdio + HTTP paylaşır)
+│   ├── server.mjs            # MCP stdio entrypoint (factory kullanır, ince katman)
 │   ├── http.mjs              # HTTP köprüsü: admin arayüzü + /api + /site/ (127.0.0.1)
+│   ├── http-server.mjs       # MCP Streamable HTTP transport + stateful session (127.0.0.1:4323)
 │   ├── store.mjs             # Markdown okuma/yazma, slug, state, audit
-│   └── smoke.mjs             # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
+│   ├── smoke.mjs             # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
+│   └── smoke-http.mjs        # HTTP transport uçtan uca smoke (20 kontrol)
 ├── backend/                  # NestJS + clean architecture (ayrı workspace, HTTP API)
 │   ├── src/main.ts           # HTTP bootstrap (PORT, varsayılan 3000)
 │   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
@@ -266,6 +287,8 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   koşar: ana guardrail zinciri (taslak → build'de yok → onay → build'de var → sil → kaybolur) + i18n
   (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
+- **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
+  zinciri + session isolation + bilinmeyen agent reddi. stdio smoke (23) korunur.
 - **Backend (`npm run backend:ci`):** NestJS sites slice **63 kontrol** (domain + use-case + DI + file/sqlite adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file ve sqlite modları) + **paylaşımlı contract**
   (üç adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:

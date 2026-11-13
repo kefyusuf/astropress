@@ -27,8 +27,10 @@
     "build": "astro build",
     "preview": "astro preview",
     "mcp": "node mcp/server.mjs",
+    "mcp:http": "node mcp/http-server.mjs",
     "admin": "node mcp/http.mjs",
     "smoke": "node mcp/smoke.mjs",
+    "smoke:http": "node mcp/smoke-http.mjs",
     "test": "node --test \"test/*.test.mjs\"",
     "backend:ci": "npm --prefix backend ci && npm --prefix backend test",
     "ci": "npm run build && npm test && npm run smoke && npm run backend:ci"
