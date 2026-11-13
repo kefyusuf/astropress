@@ -66,15 +66,15 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 | `npm run admin` | Yönetim arayüzü + `/api` + `/site/` (`127.0.0.1:4322`) |
 | `npm test` | `node:test` birim + entegrasyon (30 kontrol, izole) |
 | `npm run smoke` | Uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek build) |
-| `npm run smoke:http` | HTTP transport uçtan uca smoke (20 kontrol, gerçek build) |
+| `npm run smoke:http` | HTTP transport uçtan uca smoke (24 kontrol, gerçek build) |
 | `npm run ci` | `build && test && smoke && smoke:http && backend:ci` — CI'ın yerel eşdeğeri |
 
 ## Docker ile geliştirme
 
-Tek imaj, üç servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000).
+Tek imaj, dört servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323).
 
 ```bash
-docker compose up --build                  # web + admin + backend
+docker compose up --build                  # web + admin + backend + mcp-http
 docker compose run --rm backend npm test   # backend testleri container içinde
 docker compose down
 ```
@@ -166,7 +166,7 @@ ASTROPRESS_STORAGE=sqlite npm --prefix backend run export   # DB → sites.json 
 │   ├── http-server.mjs       # MCP Streamable HTTP transport + stateful session (127.0.0.1:4323)
 │   ├── store.mjs             # Markdown okuma/yazma, slug, state, audit
 │   ├── smoke.mjs             # SDK istemcisiyle uçtan uca + RBAC + i18n testi (23 kontrol)
-│   └── smoke-http.mjs        # HTTP transport uçtan uca smoke (20 kontrol)
+│   └── smoke-http.mjs        # HTTP transport uçtan uca smoke (24 kontrol)
 ├── backend/                  # NestJS + clean architecture (ayrı workspace, HTTP API)
 │   ├── src/main.ts           # HTTP bootstrap (PORT, varsayılan 3000)
 │   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
@@ -288,7 +288,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   (EN kayıt `lang=en` taşır, `/en/blog/` altına build olur, TR rotasına sızmaz) + RBAC izin/red senaryoları.
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
-  zinciri + session isolation + bilinmeyen agent reddi. stdio smoke (23) korunur.
+  zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
 - **Backend (`npm run backend:ci`):** NestJS sites slice **63 kontrol** (domain + use-case + DI + file/sqlite adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file ve sqlite modları) + **paylaşımlı contract**
   (üç adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:

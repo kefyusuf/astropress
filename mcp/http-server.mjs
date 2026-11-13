@@ -42,10 +42,11 @@ function hostAllowed(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  if (url.pathname !== '/mcp') return json(res, 404, { error: 'not found' });
-  if (!hostAllowed(req)) return json(res, 403, { error: 'forbidden host' });
   try {
+    // URL parse try içinde: bozuk target (ERR_INVALID_URL) sunucuyu çökertmez, 400 döner.
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname !== '/mcp') return json(res, 404, { error: 'not found' });
+    if (!hostAllowed(req)) return json(res, 403, { error: 'forbidden host' });
     const sid = req.headers['mcp-session-id'];
     const entry = sid ? transports[sid] : undefined;
 

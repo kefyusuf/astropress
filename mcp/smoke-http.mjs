@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ROOT } from './store.mjs';
@@ -110,6 +111,47 @@ try {
   let unknownRejected = false;
   try { const bad = await connect('hacker'); await bad.close(); } catch { unknownRejected = true; }
   check('HTTP unknown agent header rejected', unknownRejected);
+
+  // DELETE sonrası oturum kapanır (session map temizlenir) — spec §13.8.
+  const dt = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
+    requestInit: { headers: { 'X-Astropress-Agent': 'reader' } },
+  });
+  const dc = new Client({ name: 'astropress-smoke-http', version: '0.0.0' });
+  await dc.connect(dt);
+  const staleSid = dt.sessionId;
+  await dt.terminateSession(); // DELETE gönderir → onclose → map temizliği (SDK 1.32.2: close() yalnız lokal abort)
+  await dc.close(); // lokal temizlik — DELETE göndermez; terminateSession'dan SONRA olmalı (close, abort controller'ı iptal eder)
+  const stale = await fetch(`http://127.0.0.1:${port}/mcp`, { headers: { 'Mcp-Session-Id': staleSid } });
+  check('HTTP DELETE cleanup: stale session rejected', stale.status === 400 || stale.status === 404);
+
+  // reader delete reddi (stdio parity).
+  const rd2 = await connect('reader');
+  check('HTTP RBAC reader delete denied', await denied(rd2, 'delete_content', { collection: 'blog', slug: 'v60-pour-over' }));
+  await rd2.close();
+
+  // EN translationOf kalıcılığı (stdio parity).
+  const op3 = await connect('operator');
+  const en2 = await call(op3, 'create_content', { collection: 'blog', title: 'HTTP EN Readback', lang: 'en', translationOf: 'v60-pour-over' });
+  check('HTTP i18n EN translationOf persisted', (await call(op3, 'read_content', { collection: 'blog', slug: en2.slug })).data.translationOf === 'v60-pour-over');
+  await call(op3, 'delete_content', { collection: 'blog', slug: en2.slug });
+  await op3.close();
+
+  // Bozuk request target → 400, sunucu ÇÖKMEZ (regression: new URL try içinde olmalı).
+  let malformedHandled = false;
+  try {
+    const raw = await new Promise((resolve, reject) => {
+      const sock = net.connect(port, '127.0.0.1', () => {
+        sock.write('GET http://localhost:badport/mcp HTTP/1.1\r\nHost: localhost\r\n\r\n');
+      });
+      let buf = '';
+      const timer = setTimeout(() => { sock.destroy(); reject(new Error('raw socket timeout')); }, 5000);
+      sock.on('data', (d) => { buf += d.toString(); if (buf.includes('\r\n\r\n')) { clearTimeout(timer); sock.destroy(); resolve(buf); } });
+      sock.on('error', (e) => { clearTimeout(timer); reject(e); });
+    });
+    const alive = await fetch(`http://127.0.0.1:${port}/mcp`);
+    malformedHandled = raw.startsWith('HTTP/1.1 400') && alive.status === 400;
+  } catch { malformedHandled = false; }
+  check('HTTP malformed target → 400 + server alive', malformedHandled);
 } finally {
   child.kill();
 }
