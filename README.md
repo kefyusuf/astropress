@@ -71,10 +71,10 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 
 ## Docker ile geliştirme
 
-Tek imaj, dört servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323).
+Tek imaj, beş servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323), `postgres` (dev DB, 5432).
 
 ```bash
-docker compose up --build                  # web + admin + backend + mcp-http
+docker compose up --build                  # web + admin + backend + mcp-http + postgres
 docker compose run --rm backend npm test   # backend testleri container içinde
 docker compose down
 ```
@@ -109,7 +109,7 @@ domain hataları `DomainExceptionFilter` ile HTTP kodlarına çevrilir (doğrula
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 63 kontrol (e2e + contract + bridge)
+npm --prefix backend test                                      # 74 kontrol (63 + 11 Postgres; DATABASE_URL unset iken 11 skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -126,6 +126,7 @@ npm --prefix backend test                                      # 63 kontrol (e2e
 | `file` (varsayılan) | committed `sites.json` | git-native | üretim varsayılanı; tek yazar backend |
 | `memory` | RAM | geçici (process ömrü) | test / hızlı development |
 | `sqlite` | `.astropress/sites.db` | runtime state (gitignore'lu) | ölçek/çok-yazar gerektiğinde opt-in |
+| `postgres` | PostgreSQL (`DATABASE_URL`) | runtime state (sunucu) | ölçek/çok-yazar; Docker dev servisi ile |
 
 **Model A — tek kaynak:** root Astro build **her zaman** `sites.json`'ı okur (F0 temeli; canlı servise bağımlılık yok).
 `sqlite` modunda DB runtime kaynağıdır; build'den önce `export` ile `sites.json`'a geri yazılır. `seed`/`export`
@@ -134,11 +135,14 @@ köprüsü veriyi json ↔ DB arasında taşır (idempotent upsert):
 ```bash
 ASTROPRESS_STORAGE=sqlite npm --prefix backend run seed     # sites.json → DB (önce build gerekir)
 ASTROPRESS_STORAGE=sqlite npm --prefix backend run export   # DB → sites.json (root build bunu okur)
+ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localhost:5432/astropress npm --prefix backend run seed
+ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localhost:5432/astropress npm --prefix backend run export
 ```
 
-- Env override: `ASTROPRESS_SITES_FILE` (json yolu), `ASTROPRESS_DB_FILE` (db yolu) — test izolasyonu; `PORT` portu belirler.
-- `sqlite` adapter'ı **better-sqlite3 ^12** (prebuilt binary; node 20/22/24). Üç adapter (`memory`/`file`/`sqlite`)
-  aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
+- Env override: `ASTROPRESS_SITES_FILE` (json yolu), `ASTROPRESS_DB_FILE` (db yolu), `DATABASE_URL` (postgres bağlantı dizesi) — test izolasyonu; `PORT` portu belirler.
+- `sqlite` adapter'ı **better-sqlite3 ^12** (prebuilt binary; node 20/22/24), `postgres` adapter'ı **pg ^8** (Pool, node 20/22/24).
+  Dört adapter (`memory`/`file`/`sqlite`/`postgres`) aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
+  Postgres testleri `DATABASE_URL` unset iken skip olur (bracket Docker'sız yeşil); Docker dev servisi: `docker compose up -d postgres`.
 - Bu slice yerel geliştirme içindir; henüz auth/RBAC yok — MCP köprüsündeki guardrail'ler backend'e sonraki P2 adımlarında taşınır.
 
 ## Dizin yapısı
@@ -172,9 +176,9 @@ ASTROPRESS_STORAGE=sqlite npm --prefix backend run export   # DB → sites.json 
 │   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
 │   ├── src/sites/            # domain ← application (use-case/ports) ← infrastructure (adapter)
 │   │   ├── sites.controller.ts   # GET/POST /sites · GET /sites/:id · PUT /sites/:id/locales
-│   │   └── infrastructure/       # File (git-native) · Sqlite (better-sqlite3) · filter · registry-bridge
+│   │   └── infrastructure/       # File (git-native) · Sqlite (better-sqlite3) · Postgres (pg) · filter · registry-bridge
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
-│   └── test/sites/           # node:test: domain/DI/file/sqlite/HTTP e2e + contract + bridge (63)
+│   └── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -289,9 +293,9 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS sites slice **63 kontrol** (domain + use-case + DI + file/sqlite adapter
-  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file ve sqlite modları) + **paylaşımlı contract**
-  (üç adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
+- **Backend (`npm run backend:ci`):** NestJS sites slice **74 kontrol** (63 temel + 11 Postgres; skip-if-unavailable) (domain + use-case + DI + file/sqlite/postgres adapter
+  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları) + **paylaşımlı contract**
+  (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
   önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
@@ -339,8 +343,8 @@ MCP köprüsü üzerinden yapılır.
 5. ~~i18n (TR/EN) — içerik çevirileri + `/en/` rotaları + dil değiştirici~~ ✔
 6. ~~Test altyapısı (`node:test`) + CI (node 20/22/24) + MIT lisans + proje kimliği~~ ✔
 7. **Çoklu site registry + yönetim HTTP API** (NestJS backend, P1/P2.1) ✔; **SQLite adapter + seed/export köprüsü** (P2.2a) ✔.
-   Depolama varsayılan olarak dosya tabanlı (Markdown + JSON, git-native); `sqlite` opt-in katman olarak eklendi
-   (üç adapter aynı contract'tan geçer). Postgres (P2.2b) ölçek gerektiğinde opsiyonel bir sonraki katman.
+   Depolama varsayılan olarak dosya tabanlı (Markdown + JSON, git-native); `sqlite` + `postgres` opt-in katman olarak eklendi
+   (dört adapter aynı contract'tan geçer). Postgres (P2.2b) ✔ — pg.Pool, Docker dev servisi, skip-if-unavailable test.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
 
