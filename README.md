@@ -316,6 +316,12 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   file-backed `.astropress/builds.json`, boot recovery (running → failed interrupted). `BuildRunner` port'u testlerde
   FakeBuildRunner (instant/deterministic), üretimde AstroBuildRunner (async `spawn astro build`, 180s timeout).
   Worker mantığı fake runner ile, spawn wiring tek gerçek-build testi ile kanıtlı. HTTP e2e: gerçek express + `fetch`, 201/404.
+- **Operasyonel sınırlar (P2.4 — local-dev only):** Backend HTTP API henüz auth/RBAC/rate-limit içermez (MCP tarafındaki
+  loopback/Host guard'ı yok) → yalnız yerel geliştirme için. Kuyruk sınırsız (unbounded) + retention yok; `builds.json` her
+  istekte tümüyle parse/revalidate edilir (O(n)). Bilinen failure-model sınırları Faz 2 hardening backlog'unda (spec-faithful,
+  bu slice'ta bilinçli olarak ertelendi): state write non-atomic (crash mid-write → bozuk dosya boot'u etkileyebilir), boot
+  recovery yalnız `running` job'ları kurtarır (`queued` job'lar restart'ta resume edilmez), timeout kill child process-tree'yi
+  orphan bırakabilir. Faz 2 (BullMQ+Redis) durable queue + atomic state + auth/retention/rate-limit; Faz 3 (EventStore) tam recovery getirir.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
