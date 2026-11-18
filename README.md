@@ -104,12 +104,12 @@ npm run smoke:http   # HTTP üzerinden guardrail + RBAC + i18n smoke
 ## Backend HTTP API (NestJS)
 
 `backend/` ayrı bir workspace: clean architecture (domain ← application use-case/ports ← infrastructure
-adapter). İlk slice çoklu site registry + site-başı locale config. Controller → use-case → domain;
-domain hataları `DomainExceptionFilter` ile HTTP kodlarına çevrilir (doğrulama tek yerde: domain).
+adapter). Slice'lar: çoklu site registry + site-başı locale config (P1/P2.1) ve **build worker** (P2.4).
+Controller → use-case → domain; domain hataları exception filter'lar ile HTTP kodlarına çevrilir (doğrulama tek yerde: domain).
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 74 kontrol (63 + 11 Postgres; DATABASE_URL unset iken 11 skip)
+npm --prefix backend test                                      # 106 kontrol (74 sites + 32 builds; DATABASE_URL unset iken 11 Postgres skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -118,6 +118,16 @@ npm --prefix backend test                                      # 74 kontrol (63 
 | `POST /sites` | Yeni site kaydeder (`{id,name,locales,defaultLocale}`) | 201 | 400 geçersiz · 409 zaten var |
 | `GET /sites/:id` | Tek site getirir | 200 | 404 yok |
 | `PUT /sites/:id/locales` | Locale + ana dili günceller (`{locales,defaultLocale}`) | 200 | 400 geçersiz · 404 yok |
+
+**Build worker (P2.4)** — async job kuyruğu (queue) + tek serial worker. `POST /builds` job'ı kuyruğa alır,
+worker `astro build`'i background'da çalıştırır (tek instance, concurrency 1 → `dist/` yarışı yok). Job state
+`.astropress/builds.json`'da kalıcı (runtime state); restart'ta yarım kalan `running` job'lar `failed (interrupted)` recover edilir.
+
+| Endpoint | Ne yapar | Başarı | Hata |
+|---|---|---|---|
+| `POST /builds` | Build job'ı kuyruğa alır (queued) | 201 | — |
+| `GET /builds/:id` | Job durumunu getirir (queued/running/succeeded/failed) | 200 | 404 yok |
+| `GET /builds` | Tüm job'ları listeler (yeniden eskiye) | 200 | — |
 
 ### Depolama (storage) — `ASTROPRESS_STORAGE`
 
@@ -173,17 +183,21 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 │   └── smoke-http.mjs        # HTTP transport uçtan uca smoke (24 kontrol)
 ├── backend/                  # NestJS + clean architecture (ayrı workspace, HTTP API)
 │   ├── src/main.ts           # HTTP bootstrap (PORT, varsayılan 3000)
-│   ├── src/app.module.ts     # kök modül: SitesModule + global DomainExceptionFilter
+│   ├── src/app.module.ts     # kök modül: SitesModule + BuildsModule + global exception filter'lar
 │   ├── src/sites/            # domain ← application (use-case/ports) ← infrastructure (adapter)
 │   │   ├── sites.controller.ts   # GET/POST /sites · GET /sites/:id · PUT /sites/:id/locales
 │   │   └── infrastructure/       # File (git-native) · Sqlite (better-sqlite3) · Postgres (pg) · filter · registry-bridge
+│   ├── src/builds/           # build worker slice: domain ← application (worker/use-case/ports) ← infrastructure
+│   │   ├── builds.controller.ts  # POST /builds · GET /builds/:id · GET /builds
+│   │   └── infrastructure/       # FileBuildJobRepository (.astropress) · AstroBuildRunner (spawn) · filter
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
-│   └── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
+│   ├── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
+│   └── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (32)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
 ├── prototype/index.html      # konsept prototipi (aşağıda)
-├── .astropress/              # tasks.json (onay kuyruğu) + audit.json — gitignore'lu
+├── .astropress/              # tasks.json (onay kuyruğu) + audit.json + builds.json (build job'ları) — gitignore'lu
 ├── LICENSE                   # MIT
 └── package.json
 ```
@@ -293,11 +307,15 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS sites slice **74 kontrol** (63 temel + 11 Postgres; skip-if-unavailable) (domain + use-case + DI + file/sqlite/postgres adapter
-  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları) + **paylaşımlı contract**
+- **Backend (`npm run backend:ci`):** NestJS **106 kontrol** (74 sites + 32 builds; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
+  + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
   önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
+- **Build worker (P2.4):** `builds` slice async job worker — serial `BuildWorker` (single-flight drain, concurrency 1),
+  file-backed `.astropress/builds.json`, boot recovery (running → failed interrupted). `BuildRunner` port'u testlerde
+  FakeBuildRunner (instant/deterministic), üretimde AstroBuildRunner (async `spawn astro build`, 180s timeout).
+  Worker mantığı fake runner ile, spawn wiring tek gerçek-build testi ile kanıtlı. HTTP e2e: gerçek express + `fetch`, 201/404.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
@@ -345,6 +363,8 @@ MCP köprüsü üzerinden yapılır.
 7. **Çoklu site registry + yönetim HTTP API** (NestJS backend, P1/P2.1) ✔; **SQLite adapter + seed/export köprüsü** (P2.2a) ✔.
    Depolama varsayılan olarak dosya tabanlı (Markdown + JSON, git-native); `sqlite` + `postgres` opt-in katman olarak eklendi
    (dört adapter aynı contract'tan geçer). Postgres (P2.2b) ✔ — pg.Pool, Docker dev servisi, skip-if-unavailable test.
+   **Build worker (P2.4) ✔** — backend `builds` slice: async job kuyruğu + serial worker (file-backed `.astropress/builds.json`),
+   `POST/GET /builds`, boot recovery. Strangler: MCP `ops.mjs` şimdilik kalır; Faz 2 BullMQ+Redis, Faz 3 EventStore.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
 
