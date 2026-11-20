@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BuildWorker } from '../../src/builds/application/build-worker';
+import { BuildJobRepository } from '../../src/builds/application/ports';
 import { FileBuildJobRepository } from '../../src/builds/infrastructure/file-build-job.repository';
 import { BuildJob } from '../../src/builds/domain/build-job';
 import { BuildResult } from '../../src/builds/domain/build-job';
@@ -71,4 +72,34 @@ test('drain empty queue → no-op', async () => {
   const { runner, worker } = setup();
   await worker.drain();
   assert.equal(runner.calls, 0);
+});
+
+// I1 hardening: boot never bricks (sites güvende) + kick rejection handled (process crash yok).
+test('onModuleInit: findAll rejects → boot safe (resolve, throw YOK)', async () => {
+  const repo: BuildJobRepository = {
+    save: async () => {},
+    findById: async () => null,
+    findAll: async () => { throw new Error('IO corrupt'); },
+  };
+  const worker = new BuildWorker(repo, new FakeBuildRunner());
+  await worker.onModuleInit(); // reject ETMEMELI — yoksa tüm backend (sites dahil) boot edemez
+});
+
+test('kick: repo rejection → unhandled rejection YOK (process crash önlenir)', async () => {
+  const rejections: unknown[] = [];
+  const onRej = (e: unknown) => { rejections.push(e); };
+  process.on('unhandledRejection', onRej);
+  try {
+    const repo: BuildJobRepository = {
+      save: async () => { throw new Error('IO'); },
+      findById: async () => null,
+      findAll: async () => { throw new Error('IO'); },
+    };
+    const worker = new BuildWorker(repo, new FakeBuildRunner());
+    worker.kick();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(rejections.length, 0, 'kick drain rejection handle edilmeli');
+  } finally {
+    process.off('unhandledRejection', onRej);
+  }
 });

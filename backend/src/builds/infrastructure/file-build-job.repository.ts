@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BuildJob, BuildJobProps } from '../domain/build-job';
 import { BuildJobRepository } from '../application/ports';
 
@@ -22,18 +22,40 @@ export function defaultBuildsFile(): string {
 
 @Injectable()
 export class FileBuildJobRepository implements BuildJobRepository {
+  private readonly logger = new Logger(FileBuildJobRepository.name);
+
   constructor(@Inject(BUILDS_FILE) private readonly file: string) {}
 
   private readAll(): BuildJob[] {
     if (!fs.existsSync(this.file)) return [];
-    const raw = JSON.parse(fs.readFileSync(this.file, 'utf8')) as BuildJobProps[];
-    return raw.map((p) => BuildJob.create(p));
+    // Transient IO (EBUSY/EPERM) propagate eder — quarantine ETME (state yanlışlıkla destroy edilmez).
+    const raw = fs.readFileSync(this.file, 'utf8');
+    try {
+      const props = JSON.parse(raw) as BuildJobProps[];
+      return props.map((p) => BuildJob.create(p));
+    } catch (err) {
+      // Corrupt content (parse/revalidation/type) → quarantine + empty: boot/guard-safe, slice functional kalır.
+      this.logger.warn(`builds.json bozuk, quarantine ediliyor: ${err instanceof Error ? err.message : String(err)}`);
+      this.quarantine();
+      return [];
+    }
+  }
+
+  private quarantine(): void {
+    try {
+      fs.renameSync(this.file, `${this.file}.corrupt`);
+    } catch (err) {
+      this.logger.warn(`quarantine rename başarısız: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private writeAll(jobs: BuildJob[]): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const props = jobs.map((j) => j.toProps());
-    fs.writeFileSync(this.file, JSON.stringify(props, null, 2), 'utf8');
+    // Atomic: tmp'ye yaz + rename (same-dir → crash mid-write truncated dosya bırakmaz).
+    const tmp = `${this.file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(props, null, 2), 'utf8');
+    fs.renameSync(tmp, this.file);
   }
 
   async save(job: BuildJob): Promise<void> {
