@@ -4,3 +4,6 @@ dist/
 .astropress/
 *.log
 .DS_Store
+
+# SDD implementation plans local-only (specs/ tracked kalır)
+docs/superpowers/plans/

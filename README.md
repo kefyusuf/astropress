@@ -109,7 +109,7 @@ Controller → use-case → domain; domain hataları exception filter'lar ile HT
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 106 kontrol (74 sites + 32 builds; DATABASE_URL unset iken 11 Postgres skip)
+npm --prefix backend test                                      # 116 kontrol (74 sites + 42 builds; DATABASE_URL unset iken 11 Postgres skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -307,21 +307,22 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS **106 kontrol** (74 sites + 32 builds; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
+- **Backend (`npm run backend:ci`):** NestJS **116 kontrol** (74 sites + 42 builds; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
   önce yakalanır; doğrulama kuralları tek yerde (domain) kalır.
 - **Build worker (P2.4):** `builds` slice async job worker — serial `BuildWorker` (single-flight drain, concurrency 1),
-  file-backed `.astropress/builds.json`, boot recovery (running → failed interrupted). `BuildRunner` port'u testlerde
-  FakeBuildRunner (instant/deterministic), üretimde AstroBuildRunner (async `spawn astro build`, 180s timeout).
+  file-backed `.astropress/builds.json` (atomic write + corruption self-heal), boot recovery (running → failed interrupted, crash-safe). `BuildRunner` port'u testlerde
+  FakeBuildRunner (instant/deterministic), üretimde AstroBuildRunner (async `spawn astro build`, 180s timeout + cross-platform process-tree kill).
   Worker mantığı fake runner ile, spawn wiring tek gerçek-build testi ile kanıtlı. HTTP e2e: gerçek express + `fetch`, 201/404.
 - **Operasyonel sınırlar (P2.4 — local-dev only):** Backend HTTP API henüz auth/RBAC/rate-limit içermez (MCP tarafındaki
   loopback/Host guard'ı yok) → yalnız yerel geliştirme için. Kuyruk sınırsız (unbounded) + retention yok; `builds.json` her
-  istekte tümüyle parse/revalidate edilir (O(n)). Bilinen failure-model sınırları Faz 2 hardening backlog'unda (spec-faithful,
-  bu slice'ta bilinçli olarak ertelendi): state write non-atomic (crash mid-write → bozuk dosya boot'u etkileyebilir), boot
-  recovery yalnız `running` job'ları kurtarır (`queued` job'lar restart'ta resume edilmez), timeout kill child process-tree'yi
-  orphan bırakabilir. Faz 2 (BullMQ+Redis) durable queue + atomic state + auth/retention/rate-limit; Faz 3 (EventStore) tam recovery getirir.
+  istekte tümüyle parse/revalidate edilir (O(n)). **Faz-2 in-slice hardening (I1+M2) uygulandı:** atomic state write (tmp+rename →
+  crash mid-write truncated dosya bırakmaz), corrupt `builds.json` self-heal (quarantine `.corrupt` + boş state; transient IO rethrow),
+  boot/kick crash-safe (backend boot'u brick olmaz, unhandled-rejection yok), timeout cross-platform process-tree kill (orphan grandchild bırakmaz).
+  **Kalan debt (Faz-2 backlog):** boot recovery yalnız `running` job'ları kurtarır (`queued` job'lar restart'ta resume edilmez — I2);
+  auth/RBAC/rate-limit/retention/queue-bound yok (M5). Faz 2 (BullMQ+Redis) durable queue + auth/retention/rate-limit; Faz 3 (EventStore) tam recovery getirir.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
