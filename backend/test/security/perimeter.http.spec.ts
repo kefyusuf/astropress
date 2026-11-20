@@ -137,3 +137,77 @@ test('body: >1MB POST → 413', async () => {
   const res = await send(`${url}/sites`, 'POST', big);
   assert.equal(res.status, 413);
 });
+
+// --- RBAC ---
+test('rbac: reader GET sites → 200 (public read)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'GET', undefined, 'reader');
+  assert.equal(res.status, 200);
+});
+
+test('rbac: reader POST sites → 403 (create denied)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'POST', validSite, 'reader');
+  assert.equal(res.status, 403);
+});
+
+test('rbac: content-studio POST sites → 201 (create allowed)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'POST', validSite, 'content-studio');
+  assert.equal(res.status, 201);
+});
+
+test('rbac: commerce-bot POST sites → 403 (create:false)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'POST', validSite, 'commerce-bot');
+  assert.equal(res.status, 403);
+});
+
+test('rbac: seo-agent PUT locales → 200 (edit allowed)', async () => {
+  const url = await boot();
+  await send(`${url}/sites`, 'POST', validSite, 'content-studio');
+  const res = await send(`${url}/sites/kahve/locales`, 'PUT', { locales: ['tr', 'en'], defaultLocale: 'tr' }, 'seo-agent');
+  assert.equal(res.status, 200);
+});
+
+test('rbac: reader PUT locales → 403 (edit denied)', async () => {
+  const url = await boot();
+  await send(`${url}/sites`, 'POST', validSite, 'content-studio');
+  const res = await send(`${url}/sites/kahve/locales`, 'PUT', { locales: ['tr', 'en'], defaultLocale: 'tr' }, 'reader');
+  assert.equal(res.status, 403);
+});
+
+test('rbac: content-studio POST builds → 201 (edit allowed)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/builds`, 'POST', {}, 'content-studio');
+  assert.equal(res.status, 201);
+});
+
+test('rbac: reader POST builds → 403 (edit denied, resource gap closed)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/builds`, 'POST', {}, 'reader');
+  assert.equal(res.status, 403);
+});
+
+// --- RATE-LIMIT ---
+test('rate-limit: mutation over low limit → 429', async () => {
+  const url = await boot({ rateLimit: 2 });
+  assert.equal((await send(`${url}/builds`, 'POST', {}, 'content-studio')).status, 201);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, 'content-studio')).status, 201);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, 'content-studio')).status, 429);
+});
+
+test('rate-limit: GET exempt (many GETs, no 429)', async () => {
+  const url = await boot({ rateLimit: 2 });
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await send(`${url}/sites`, 'GET', undefined, 'content-studio')).status, 200);
+  }
+});
+
+test('rate-limit: per-agent isolation (A throttled, B passes)', async () => {
+  const url = await boot({ rateLimit: 2 });
+  await send(`${url}/builds`, 'POST', {}, 'content-studio');
+  await send(`${url}/builds`, 'POST', {}, 'content-studio');
+  assert.equal((await send(`${url}/builds`, 'POST', {}, 'content-studio')).status, 429);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, 'commerce-bot')).status, 201);
+});
