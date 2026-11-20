@@ -29,8 +29,8 @@ export class AgentRegistry {
   }
 
   getAgent(id: string): Agent {
+    if (!Object.prototype.hasOwnProperty.call(this.registry, id)) throw new UnknownAgentError(id);
     const a = this.registry[id];
-    if (!a) throw new UnknownAgentError(id);
     return { id, name: a.name, perms: a.perms };
   }
 

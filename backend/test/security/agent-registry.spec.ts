@@ -45,6 +45,14 @@ test('getAgent unknown throws UnknownAgentError with MCP-parity message', () => 
   assert.throws(() => registry.getAgent('hacker'), /Bilinmeyen agent: hacker/);
 });
 
+test('getAgent prototype-chain names throw UnknownAgentError (own-property guard)', () => {
+  const registry = makeRegistry();
+  for (const id of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+    assert.throws(() => registry.getAgent(id), UnknownAgentError);
+    assert.throws(() => registry.getAgent(id), /Bilinmeyen agent: /);
+  }
+});
+
 test('listAgents returns all 5 agents', () => {
   const agents = makeRegistry().listAgents();
   assert.equal(agents.length, 5);
