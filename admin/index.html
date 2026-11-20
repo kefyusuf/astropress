@@ -185,7 +185,7 @@
     const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish'];
     const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın' };
     main.innerHTML = `
-      <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (mcp/agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
+      <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (kök agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Agent</th>${permKeys.map((k) => `<th>${labels[k]}</th>`).join('')}</tr></thead>
         <tbody>${agents.map((a) => `

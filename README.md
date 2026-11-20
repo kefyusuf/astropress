@@ -97,7 +97,7 @@ npm run smoke:http   # HTTP üzerinden guardrail + RBAC + i18n smoke
 ```
 
 - **Transport:** Streamable HTTP (güncel MCP spec), tek `/mcp` endpoint (POST/GET/DELETE), stateful session (`Mcp-Session-Id`).
-- **Kimlik:** initialize'da `X-Astropress-Agent: <id>` header → agent registry (`agents.json`), varsayılan `content-studio`. **auto-HUMAN yok** → guardrail korunur (agent self-publish yapamaz).
+- **Kimlik:** initialize'da `X-Astropress-Agent: <id>` header → agent registry (kök `agents.json`, MCP+backend paylaşır), varsayılan `content-studio`. **auto-HUMAN yok** → guardrail korunur (agent self-publish yapamaz).
 - **Güvenlik:** loopback bind + Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, değilse 403). Container'da `HOST=0.0.0.0` + `MCP_ALLOW_ANY_HOST=1`. Production auth (token/OAuth) sonraki faz.
 - **Fazlar:** P2.3 stateful in-memory + header kimlik (local dev) → Faz 2 token/OAuth → Faz 3 EventStore/resumability + rate-limit → Faz 4 backend yakınsaması.
 
@@ -109,7 +109,7 @@ Controller → use-case → domain; domain hataları exception filter'lar ile HT
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 116 kontrol (74 sites + 42 builds; DATABASE_URL unset iken 11 Postgres skip)
+npm --prefix backend test                                      # 146 kontrol (74 sites + 43 builds + 29 security; DATABASE_URL unset iken 11 Postgres skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -128,6 +128,34 @@ worker `astro build`'i background'da çalıştırır (tek instance, concurrency 
 | `POST /builds` | Build job'ı kuyruğa alır (queued) | 201 | — |
 | `GET /builds/:id` | Job durumunu getirir (queued/running/succeeded/failed) | 200 | 404 yok |
 | `GET /builds` | Tüm job'ları listeler (yeniden eskiye) | 200 | — |
+
+### Backend Security Perimeter (D1)
+
+MCP köprüsünün güvenlik modeli NestJS backend'e port edildi (merkezi `backend/src/security/`, sites/builds slice'larına dokunmadan).
+İstek pipeline'ı: **bind** (`127.0.0.1`, `HOST` env) → **body-limit** (1MB JSON → 413) → **HostMiddleware** (allowlist → 403) →
+**IdentityMiddleware** (`X-Astropress-Agent` → `req.agent`, unknown → 401) → **AgentThrottlerGuard** (per-agent, mutations-only → 429) →
+**PermissionGuard** (route→perm policy, fail-closed → 403) → controller.
+
+| Route | Method | Yetki |
+|---|---|---|
+| `/sites`, `/sites/:id`, `/builds`, `/builds/:id` | GET | public (read) |
+| `/sites` | POST | `create` |
+| `/sites/:id/locales` | PUT | `edit` |
+| `/builds` | POST | `edit` (build = operasyonel mutation; reader ✗ — MCP divergence) |
+
+- **Kimlik:** header-claim (loopback-trusted, token yok). Eksik header → default `content-studio` (`publish:false` → self-publish yok). Unknown → 401.
+- **Registry:** kök `agents.json` tek-kaynak (sites.json emsali); MCP `auth.mjs` (`ROOT`) + backend `AgentRegistry` birlikte okur.
+- **Rate-limit:** `@nestjs/throttler` v6, per-agent tracker (`req.agent.id`), GET exempt (poll-friendly), default 60 mutation/dk/agent/route, in-memory (Group E'de Redis swap).
+- **Fail-closed:** policy map'te olmayan route → 403 (yeni endpoint açıkça eklenmeli). Denied → 403 + `Logger.warn` (full audit store MCP concern).
+- **Env:** `HOST` (bind, default `127.0.0.1`), `ASTROPRESS_ALLOW_ANY_HOST=1` (Host kontrol devre-dışı, container), `ASTROPRESS_RATE_LIMIT` (limit override), `ASTROPRESS_AGENTS_FILE` (registry test seam).
+
+| Durum | Kod |
+|---|---|
+| Yanlış Host | 403 |
+| Body >1MB | 413 |
+| Unknown agent | 401 |
+| RBAC reddi / unmapped route | 403 |
+| Rate-limit aşımı (mutation) | 429 |
 
 ### Depolama (storage) — `ASTROPRESS_STORAGE`
 
@@ -153,13 +181,14 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 - `sqlite` adapter'ı **better-sqlite3 ^12** (prebuilt binary; node 20/22/24), `postgres` adapter'ı **pg ^8** (Pool, node 20/22/24).
   Dört adapter (`memory`/`file`/`sqlite`/`postgres`) aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
   Postgres testleri `DATABASE_URL` unset iken skip olur (bracket Docker'sız yeşil); Docker dev servisi: `docker compose up -d postgres`.
-- Bu slice yerel geliştirme içindir; henüz auth/RBAC yok — MCP köprüsündeki guardrail'ler backend'e sonraki P2 adımlarında taşınır.
+- Bu slice yerel geliştirme içindir; **D1 security perimeter** (loopback bind + Host guard + header kimlik + RBAC + per-agent rate-limit + 1MB body) MCP modelini backend'e taşır (aşağıya bkz.). Gerçek token/OAuth Faz-2+.
 
 ## Dizin yapısı
 
 ```
 ├── astro.config.mjs          # site, output: static
 ├── sites.json                # COMMITTED tek kaynak: site registry (config; tek yazar backend)
+├── agents.json               # COMMITTED tek kaynak: agent registry (yetki matrisi; MCP auth.mjs + backend AgentRegistry)
 ├── src/
 │   ├── content.config.ts     # blog / products / pages collection şemaları (zod)
 │   ├── content/              # Markdown içerik (frontmatter = CMS alanları)
@@ -172,8 +201,7 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 │   └── styles/global.css     # light-dark() tema, duyarlı yerleşim
 ├── mcp/
 │   ├── ops.mjs               # TEK guardrail + RBAC kaynağı: tüm iş mantığı (MCP + HTTP paylaşır)
-│   ├── auth.mjs              # agent kimliği (env) + yetki matrisi + insan yetkileri
-│   ├── agents.json           # agent kayıt defteri (yetki matrisi)
+│   ├── auth.mjs              # agent kimliği (env) + yetki matrisi (kök agents.json'ı ROOT üzerinden okur)
 │   ├── factory.mjs           # createMcpServer(agent) — 12 tool kaydı (stdio + HTTP paylaşır)
 │   ├── server.mjs            # MCP stdio entrypoint (factory kullanır, ince katman)
 │   ├── http.mjs              # HTTP köprüsü: admin arayüzü + /api + /site/ (127.0.0.1)
@@ -183,16 +211,18 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 │   └── smoke-http.mjs        # HTTP transport uçtan uca smoke (24 kontrol)
 ├── backend/                  # NestJS + clean architecture (ayrı workspace, HTTP API)
 │   ├── src/main.ts           # HTTP bootstrap (PORT, varsayılan 3000)
-│   ├── src/app.module.ts     # kök modül: SitesModule + BuildsModule + global exception filter'lar
+│   ├── src/app.module.ts     # kök modül: SitesModule + BuildsModule + SecurityModule + global exception filter'lar
 │   ├── src/sites/            # domain ← application (use-case/ports) ← infrastructure (adapter)
 │   │   ├── sites.controller.ts   # GET/POST /sites · GET /sites/:id · PUT /sites/:id/locales
 │   │   └── infrastructure/       # File (git-native) · Sqlite (better-sqlite3) · Postgres (pg) · filter · registry-bridge
 │   ├── src/builds/           # build worker slice: domain ← application (worker/use-case/ports) ← infrastructure
 │   │   ├── builds.controller.ts  # POST /builds · GET /builds/:id · GET /builds
 │   │   └── infrastructure/       # FileBuildJobRepository (.astropress) · AstroBuildRunner (spawn) · filter
+│   ├── src/security/         # D1 perimeter: domain (agent/errors) ← infrastructure (AgentRegistry) ← interface (host/identity middleware · permission/throttler guard · policy)
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
 │   ├── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
-│   └── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (32)
+│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (43)
+│   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e (29)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -258,8 +288,8 @@ Guardrail modeli (kod düzeyinde, sözle değil):
 
 ### RBAC — agent başına yetki matrisi
 
-Yetki matrisi **şemada değil, sunucuda** zorunlu (`mcp/ops.mjs` + `mcp/auth.mjs`). Kayıt defteri
-`mcp/agents.json`; kimlik sunucu başlatılırken `ASTROPRESS_AGENT` env ile seçilir (varsayılan
+Yetki matrisi **şemada değil, sunucuda** zorunlu (MCP `mcp/ops.mjs` + `mcp/auth.mjs`; backend `PermissionGuard`). Kayıt defteri
+kök `agents.json` (MCP `auth.mjs` + backend `AgentRegistry` birlikte okur); kimlik sunucu başlatılırken `ASTROPRESS_AGENT` env ile seçilir (varsayılan
 `content-studio`). Her agent kendi MCP örneğini kendi kimliğiyle çalıştırır.
 
 | Agent | oluştur | düzenle | sil | fiyat/stok | yayın |
@@ -307,7 +337,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS **116 kontrol** (74 sites + 42 builds; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
+- **Backend (`npm run backend:ci`):** NestJS **146 kontrol** (74 sites + 43 builds + 29 security; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
@@ -316,13 +346,15 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   file-backed `.astropress/builds.json` (atomic write + corruption self-heal), boot recovery (running → failed interrupted, crash-safe). `BuildRunner` port'u testlerde
   FakeBuildRunner (instant/deterministic), üretimde AstroBuildRunner (async `spawn astro build`, 180s timeout + cross-platform process-tree kill).
   Worker mantığı fake runner ile, spawn wiring tek gerçek-build testi ile kanıtlı. HTTP e2e: gerçek express + `fetch`, 201/404.
-- **Operasyonel sınırlar (P2.4 — local-dev only):** Backend HTTP API henüz auth/RBAC/rate-limit içermez (MCP tarafındaki
-  loopback/Host guard'ı yok) → yalnız yerel geliştirme için. Kuyruk sınırsız (unbounded) + retention yok; `builds.json` her
-  istekte tümüyle parse/revalidate edilir (O(n)). **Faz-2 in-slice hardening (I1+M2) uygulandı:** atomic state write (tmp+rename →
+- **Operasyonel sınırlar (P2.4 + D1 — local-dev only):** Backend HTTP API **D1 security perimeter** içerir (aşağıya bkz.):
+  loopback bind + Host guard + header-claim kimlik + merkezi RBAC + per-agent rate-limit + 1MB body-limit. Gerçek token/OAuth yok
+  (loopback-trusted header) → yalnız yerel geliştirme için. Kuyruk hâlâ sınırsız (unbounded) + retention yok; `builds.json` her
+  istekte tümüyle parse/revalidate edilir (O(n)). **Faz-2 in-slice hardening (I1+M2+M3+M4+I2+M1) uygulandı:** atomic state write (tmp+rename →
   crash mid-write truncated dosya bırakmaz), corrupt `builds.json` self-heal (quarantine `.corrupt` + boş state; transient IO rethrow),
-  boot/kick crash-safe (backend boot'u brick olmaz, unhandled-rejection yok), timeout cross-platform process-tree kill (orphan grandchild bırakmaz).
-  **Kalan debt (Faz-2 backlog):** boot recovery yalnız `running` job'ları kurtarır (`queued` job'lar restart'ta resume edilmez — I2);
-  auth/RBAC/rate-limit/retention/queue-bound yok (M5). Faz 2 (BullMQ+Redis) durable queue + auth/retention/rate-limit; Faz 3 (EventStore) tam recovery getirir.
+  boot/kick crash-safe (backend boot'u brick olmaz, unhandled-rejection yok), timeout cross-platform process-tree kill (orphan grandchild bırakmaz),
+  boot queued-resume (restart'ta `queued` job'lar da kurtarılır — I2), sites e2e state isolation (M1).
+  **Kalan debt (Faz-2 backlog):** builds retention + queue-bound (D2, bounded); BullMQ+Redis durable queue (Group E — throttler storage Redis swap seam hazır).
+  Gerçek token/OAuth + distributed registry Faz-2+; Faz 3 (EventStore) tam recovery getirir.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
