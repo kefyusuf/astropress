@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from './store.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const registry = JSON.parse(fs.readFileSync(path.join(__dirname, 'agents.json'), 'utf8'));
+const registry = JSON.parse(fs.readFileSync(path.join(ROOT, 'agents.json'), 'utf8'));
 
 export const AGENT_ID = process.env.ASTROPRESS_AGENT || 'content-studio';
 
