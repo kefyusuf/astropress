@@ -14,14 +14,15 @@ export class BuildWorker implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     try {
       await this.recover();
+      this.kick(); // I2: queued job'ları restart'ta resume et (background drain). Interrupted running retry EDİLMEZ.
     } catch (err) {
       // Boot recovery best-effort: never brick the app (sites API dahil tüm backend boot eder).
       this.logger.warn(`boot recovery başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // Boot recovery: önceki crash'ten kalan running job'lar failed (interrupted).
-  // Empty/no-running ise write YOK. (queued job'ların restart'ta resume edilmesi Faz-2/I2 — ertelendi.)
+  // Boot recovery: önceki crash'ten kalan running job'lar failed (interrupted). Empty/no-running ise write YOK.
+  // queued job'lar onModuleInit'teki kick ile resume edilir (I2); interrupted running job'lar retry EDİLMEZ.
   async recover(): Promise<void> {
     const all = await this.repo.findAll();
     for (const job of all) {

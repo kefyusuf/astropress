@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { AddressInfo } from 'node:net';
 import { Pool } from 'pg';
 import { Test } from '@nestjs/testing';
@@ -11,7 +14,7 @@ import { SkipTest } from './site-repository.contract';
 // Skip-if-unavailable: DATABASE_URL unset → static skip; ulaşılamaz → t.skip().
 const url = process.env.DATABASE_URL;
 const skip = url ? undefined : 'DATABASE_URL tanımlı değil — Postgres e2e atlandı';
-const orig = { storage: process.env.ASTROPRESS_STORAGE, dbUrl: process.env.DATABASE_URL };
+const orig = { storage: process.env.ASTROPRESS_STORAGE, dbUrl: process.env.DATABASE_URL, state: process.env.ASTROPRESS_STATE };
 let cleanup: (() => Promise<void>) | null = null;
 
 afterEach(async () => {
@@ -20,6 +23,8 @@ afterEach(async () => {
   else process.env.ASTROPRESS_STORAGE = orig.storage;
   if (orig.dbUrl === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = orig.dbUrl;
+  if (orig.state === undefined) delete process.env.ASTROPRESS_STATE;
+  else process.env.ASTROPRESS_STATE = orig.state;
 });
 
 async function boot(): Promise<string> {
@@ -34,12 +39,15 @@ async function boot(): Promise<string> {
   }
   await p.end();
   process.env.ASTROPRESS_STORAGE = 'postgres';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-http-pg-'));
+  process.env.ASTROPRESS_STATE = dir; // M1: builds slice izolasyonu — worker gerçek .astropress/builds.json'a dokunmaz
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
   await app.listen(0);
   const port = (app.getHttpServer().address() as AddressInfo).port;
   cleanup = async () => {
     await app.close();
+    fs.rmSync(dir, { recursive: true, force: true });
     const c = new Pool({ connectionString: url! });
     try { await c.query('TRUNCATE sites'); } finally { await c.end(); }
   };

@@ -10,7 +10,7 @@ import { AppModule } from '../../src/app.module';
 
 // P2.1/P2.2 HTTP API e2e: gerçek express sunucusu (rastgele port) + gerçek fetch.
 // Her test izole temp storage (file: sites.json · sqlite: sites.db) üzerinde koşar; committed config'e dokunmaz.
-const orig = { storage: process.env.ASTROPRESS_STORAGE, file: process.env.ASTROPRESS_SITES_FILE, dbFile: process.env.ASTROPRESS_DB_FILE };
+const orig = { storage: process.env.ASTROPRESS_STORAGE, file: process.env.ASTROPRESS_SITES_FILE, dbFile: process.env.ASTROPRESS_DB_FILE, state: process.env.ASTROPRESS_STATE };
 let cleanup: (() => Promise<void>) | null = null;
 
 afterEach(async () => {
@@ -21,6 +21,8 @@ afterEach(async () => {
   else process.env.ASTROPRESS_SITES_FILE = orig.file;
   if (orig.dbFile === undefined) delete process.env.ASTROPRESS_DB_FILE;
   else process.env.ASTROPRESS_DB_FILE = orig.dbFile;
+  if (orig.state === undefined) delete process.env.ASTROPRESS_STATE;
+  else process.env.ASTROPRESS_STATE = orig.state;
 });
 
 async function boot(mode: 'file' | 'sqlite' = 'file'): Promise<string> {
@@ -28,6 +30,7 @@ async function boot(mode: 'file' | 'sqlite' = 'file'): Promise<string> {
   process.env.ASTROPRESS_STORAGE = mode;
   process.env.ASTROPRESS_SITES_FILE = path.join(dir, 'sites.json');
   process.env.ASTROPRESS_DB_FILE = path.join(dir, 'sites.db');
+  process.env.ASTROPRESS_STATE = dir; // M1: builds slice izolasyonu — worker gerçek .astropress/builds.json'a dokunmaz
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication();
   await app.listen(0);

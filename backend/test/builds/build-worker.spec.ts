@@ -103,3 +103,18 @@ test('kick: repo rejection → unhandled rejection YOK (process crash önlenir)'
     process.off('unhandledRejection', onRej);
   }
 });
+
+// I2: boot recovery queued job'ları resume eder — onModuleInit kick ile background drain başlatır.
+// Explicit drain() ÇAĞRILMAZ: çağrılırsa I2 olmadan da geçerdi (test anlamsızlaşır). Poll terminal'e kadar.
+test('boot resume: queued job → onModuleInit → succeeded (explicit drain YOK)', async () => {
+  const { repo, runner, worker } = setup();
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z'));
+  await worker.onModuleInit();
+  let job = await repo.findById('a');
+  for (let i = 0; i < 100 && job?.status !== 'succeeded' && job?.status !== 'failed'; i++) {
+    await new Promise((r) => setTimeout(r, 5));
+    job = await repo.findById('a');
+  }
+  assert.equal(job?.status, 'succeeded', 'boot queued job resume edilmeli (I2 kick)');
+  assert.equal(runner.calls, 1);
+});
