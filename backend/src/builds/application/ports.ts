@@ -16,4 +16,5 @@ export interface BuildJobRepository {
   save(job: BuildJob): Promise<void>;
   findById(id: string): Promise<BuildJob | null>;
   findAll(): Promise<BuildJob[]>;
+  pruneTerminal(keep: number): Promise<void>;
 }

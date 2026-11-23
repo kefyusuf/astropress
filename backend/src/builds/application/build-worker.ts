@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner } from './ports';
 
+export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
+
 @Injectable()
 export class BuildWorker implements OnModuleInit {
   private readonly logger = new Logger(BuildWorker.name);
@@ -9,6 +11,7 @@ export class BuildWorker implements OnModuleInit {
   constructor(
     @Inject(BUILD_JOB_REPOSITORY) private readonly repo: BuildJobRepository,
     @Inject(BUILD_RUNNER) private readonly runner: BuildRunner,
+    @Inject(BUILD_RETENTION) private readonly retention: number,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -63,6 +66,7 @@ export class BuildWorker implements OnModuleInit {
         ? running.markSucceeded(result, done)
         : running.markFailed(result.error ?? 'build failed', done, result.exitCode, result.logTail);
       await this.repo.save(finished);
+      await this.repo.pruneTerminal(this.retention); // D2: terminal history keep-last-N (queued/running korunur)
     }
   }
 }

@@ -21,3 +21,18 @@ export class FakeBuildRunner implements BuildRunner {
     return this.results[Math.min(this.calls - 1, this.results.length - 1)];
   }
 }
+
+// Queue-bound e2e: run() release edilene kadar block eder → queued job'lar birikir (instant runner kuyruğu hemen boşaltır).
+export class BlockingBuildRunner implements BuildRunner {
+  calls = 0;
+  private release!: () => void;
+  private readonly gate = new Promise<void>((r) => { this.release = r; });
+
+  async run(): Promise<BuildResult> {
+    this.calls++;
+    await this.gate;
+    return { ok: true, exitCode: 0, logTail: 'blocking build ok' };
+  }
+
+  unblock(): void { this.release(); }
+}

@@ -11,3 +11,10 @@ export class BuildJobNotFoundError extends Error {
     this.name = 'BuildJobNotFoundError';
   }
 }
+
+export class BuildQueueFullError extends Error {
+  constructor(limit: number) {
+    super(`Build kuyruğu dolu (limit: ${limit}), daha sonra deneyin`);
+    this.name = 'BuildQueueFullError';
+  }
+}

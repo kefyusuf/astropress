@@ -73,4 +73,15 @@ export class FileBuildJobRepository implements BuildJobRepository {
   async findAll(): Promise<BuildJob[]> {
     return this.readAll();
   }
+
+  // D2 retention: terminal (succeeded/failed) job'ların en eski (finishedAt) N ötesini sil.
+  // queued/running ASLA budanmaz. terminal <= keep ise write YOK (no-op). Atomic writeAll.
+  async pruneTerminal(keep: number): Promise<void> {
+    const all = this.readAll();
+    const terminal = all.filter((j) => j.status === 'succeeded' || j.status === 'failed');
+    if (terminal.length <= keep) return;
+    const oldestFirst = terminal.sort((a, b) => (a.finishedAt ?? '').localeCompare(b.finishedAt ?? ''));
+    const remove = new Set(oldestFirst.slice(0, terminal.length - keep).map((j) => j.id));
+    this.writeAll(all.filter((j) => !remove.has(j.id)));
+  }
 }

@@ -13,11 +13,11 @@ import { FakeBuildRunner } from './fake-build-runner';
 let dir: string;
 afterEach(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
 
-function setup(results?: BuildResult[]) {
+function setup(results?: BuildResult[], retention = 50) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-worker-'));
   const repo = new FileBuildJobRepository(path.join(dir, 'builds.json'));
   const runner = new FakeBuildRunner(results);
-  const worker = new BuildWorker(repo, runner);
+  const worker = new BuildWorker(repo, runner, retention);
   return { repo, runner, worker };
 }
 
@@ -80,8 +80,9 @@ test('onModuleInit: findAll rejects → boot safe (resolve, throw YOK)', async (
     save: async () => {},
     findById: async () => null,
     findAll: async () => { throw new Error('IO corrupt'); },
+    pruneTerminal: async () => {},
   };
-  const worker = new BuildWorker(repo, new FakeBuildRunner());
+  const worker = new BuildWorker(repo, new FakeBuildRunner(), 50);
   await worker.onModuleInit(); // reject ETMEMELI — yoksa tüm backend (sites dahil) boot edemez
 });
 
@@ -94,8 +95,9 @@ test('kick: repo rejection → unhandled rejection YOK (process crash önlenir)'
       save: async () => { throw new Error('IO'); },
       findById: async () => null,
       findAll: async () => { throw new Error('IO'); },
+      pruneTerminal: async () => {},
     };
-    const worker = new BuildWorker(repo, new FakeBuildRunner());
+    const worker = new BuildWorker(repo, new FakeBuildRunner(), 50);
     worker.kick();
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(rejections.length, 0, 'kick drain rejection handle edilmeli');
@@ -117,4 +119,17 @@ test('boot resume: queued job → onModuleInit → succeeded (explicit drain YOK
   }
   assert.equal(job?.status, 'succeeded', 'boot queued job resume edilmeli (I2 kick)');
   assert.equal(runner.calls, 1);
+});
+
+// D2 retention: drain her terminal save sonrası pruneTerminal(retention) çağırır → keep-last-N.
+test('retention: drain prunes terminal history to keep-last-N', async () => {
+  const { repo, worker } = setup(undefined, 2);
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z'));
+  await repo.save(BuildJob.newQueued('b', '2026-11-16T10:00:01.000Z'));
+  await repo.save(BuildJob.newQueued('c', '2026-11-16T10:00:02.000Z'));
+  await repo.save(BuildJob.newQueued('d', '2026-11-16T10:00:03.000Z'));
+  await repo.save(BuildJob.newQueued('e', '2026-11-16T10:00:04.000Z'));
+  await worker.drain();
+  const all = await repo.findAll();
+  assert.equal(all.filter((j) => j.status === 'succeeded').length, 2, 'terminal history retention=2 ile sınırlanmalı');
 });

@@ -97,3 +97,45 @@ test('quarantine sonrası save functional state restore eder', async () => {
   await r.save(BuildJob.newQueued('a', NOW));
   assert.equal((await r.findById('a'))?.id, 'a');
 });
+
+// D2 retention: keep-last-N terminal prune (queued/running ASLA budanmaz).
+const terminal = (id: string, fin: string) =>
+  BuildJob.newQueued(id, NOW).markRunning(NOW).markSucceeded({ ok: true, exitCode: 0, logTail: 'ok' }, fin);
+
+test('pruneTerminal: keeps last N terminal by finishedAt, removes older', async () => {
+  const r = repo();
+  await r.save(terminal('old', '2026-11-23T10:00:00.000Z'));
+  await r.save(terminal('mid', '2026-11-23T10:00:01.000Z'));
+  await r.save(terminal('new', '2026-11-23T10:00:02.000Z'));
+  await r.pruneTerminal(2);
+  assert.deepEqual((await r.findAll()).map((j) => j.id).sort(), ['mid', 'new']);
+});
+
+test('pruneTerminal: queued/running never pruned', async () => {
+  const r = repo();
+  await r.save(BuildJob.newQueued('q', NOW));
+  await r.save(BuildJob.newQueued('run', NOW).markRunning(NOW));
+  await r.save(terminal('t1', '2026-11-23T10:00:00.000Z'));
+  await r.save(terminal('t2', '2026-11-23T10:00:01.000Z'));
+  await r.pruneTerminal(1);
+  const all = await r.findAll();
+  assert.ok(all.some((j) => j.id === 'q' && j.status === 'queued'));
+  assert.ok(all.some((j) => j.id === 'run' && j.status === 'running'));
+  assert.equal(all.filter((j) => j.status === 'succeeded').length, 1);
+});
+
+test('pruneTerminal: terminal count <= keep → no-op (write YOK)', async () => {
+  const r = repo();
+  await r.save(terminal('a', '2026-11-23T10:00:00.000Z'));
+  await r.save(terminal('b', '2026-11-23T10:00:01.000Z'));
+  await r.pruneTerminal(5);
+  assert.equal((await r.findAll()).length, 2);
+});
+
+test('pruneTerminal: failed also pruned (terminal = succeeded + failed)', async () => {
+  const r = repo();
+  await r.save(BuildJob.newQueued('f1', NOW).markRunning(NOW).markFailed('boom', '2026-11-23T10:00:00.000Z', 1, 'err'));
+  await r.save(terminal('s1', '2026-11-23T10:00:01.000Z'));
+  await r.pruneTerminal(1);
+  assert.deepEqual((await r.findAll()).map((j) => j.id), ['s1']);
+});

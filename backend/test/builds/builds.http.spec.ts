@@ -7,19 +7,22 @@ import path from 'node:path';
 import { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
-import { BUILD_RUNNER } from '../../src/builds/application/ports';
+import { BUILD_RUNNER, BuildRunner } from '../../src/builds/application/ports';
 import { BuildResult } from '../../src/builds/domain/build-job';
-import { FakeBuildRunner } from './fake-build-runner';
+import { BlockingBuildRunner, FakeBuildRunner } from './fake-build-runner';
 
 const origState = process.env.ASTROPRESS_STATE;
+const origQueueLimit = process.env.ASTROPRESS_BUILD_QUEUE_LIMIT;
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
   if (cleanup) { await cleanup(); cleanup = null; }
   if (origState === undefined) delete process.env.ASTROPRESS_STATE;
   else process.env.ASTROPRESS_STATE = origState;
+  if (origQueueLimit === undefined) delete process.env.ASTROPRESS_BUILD_QUEUE_LIMIT;
+  else process.env.ASTROPRESS_BUILD_QUEUE_LIMIT = origQueueLimit;
 });
 
-async function boot(runner: FakeBuildRunner): Promise<string> {
+async function boot(runner: BuildRunner): Promise<string> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-builds-http-'));
   process.env.ASTROPRESS_STATE = dir;
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -78,4 +81,26 @@ test('failure path: fake ok:false → GET failed', async () => {
   const job = await poll(url, created.id);
   assert.equal(job.status, 'failed');
   assert.equal(job.error, 'boom');
+});
+
+// D2 queue-bound: queued depth >= limit → POST /builds 429 (BuildQueueFullError). Blocking runner kuyruğu dolu tutar.
+test('queue full → POST /builds 429 (queue-bound)', async () => {
+  process.env.ASTROPRESS_BUILD_QUEUE_LIMIT = '2';
+  const runner = new BlockingBuildRunner();
+  const url = await boot(runner);
+  try {
+    const j1 = await (await fetch(`${url}/builds`, { method: 'POST' })).json();
+    for (let i = 0; i < 200; i++) {
+      const s = await (await fetch(`${url}/builds/${j1.id}`)).json();
+      if (s.status === 'running') break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal((await fetch(`${url}/builds`, { method: 'POST' })).status, 201); // queued depth 1
+    assert.equal((await fetch(`${url}/builds`, { method: 'POST' })).status, 201); // queued depth 2
+    const full = await fetch(`${url}/builds`, { method: 'POST' }); // depth 2 >= limit 2
+    assert.equal(full.status, 429);
+    assert.equal((await full.json()).error, 'BuildQueueFullError');
+  } finally {
+    runner.unblock();
+  }
 });
