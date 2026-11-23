@@ -109,7 +109,7 @@ Controller → use-case → domain; domain hataları exception filter'lar ile HT
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 147 kontrol (74 sites + 43 builds + 30 security; DATABASE_URL unset iken 11 Postgres skip)
+npm --prefix backend test                                      # 158 kontrol (74 sites + 54 builds + 30 security; DATABASE_URL unset iken 11 Postgres skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -221,7 +221,7 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 │   ├── src/security/         # D1 perimeter: domain (agent/errors) ← infrastructure (AgentRegistry) ← interface (host/identity middleware · permission/throttler guard · policy)
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
 │   ├── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
-│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (43)
+│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (54)
 │   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e (30)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
@@ -337,7 +337,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS **147 kontrol** (74 sites + 43 builds + 30 security; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
+- **Backend (`npm run backend:ci`):** NestJS **158 kontrol** (74 sites + 54 builds + 30 security; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
