@@ -110,6 +110,13 @@ export class BuildJob {
     });
   }
 
+  markDispatchLost(now: string): BuildJob {
+    if (this.status !== 'queued') {
+      throw new BuildValidationError(`markDispatchLost yalnız queued'den çağrılır: ${this.status}`);
+    }
+    return BuildJob.create({ ...this.toProps(), status: 'failed', finishedAt: now, error: 'dispatch-lost' });
+  }
+
   toProps(): BuildJobProps {
     return {
       id: this.id,

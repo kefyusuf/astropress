@@ -88,3 +88,15 @@ test('markFailed exitCode olmadan geçerli failed üretir (spawn fail/timeout)',
   assert.equal(job.exitCode, undefined);
   assert.equal(job.error, 'timeout');
 });
+
+test('markDispatchLost queued → failed + error dispatch-lost + finishedAt', () => {
+  const job = BuildJob.newQueued('b', NOW).markDispatchLost(NOW);
+  assert.equal(job.status, 'failed');
+  assert.equal(job.error, 'dispatch-lost');
+  assert.equal(job.finishedAt, NOW);
+});
+
+test('markDispatchLost queued-dışı state reddeder', () => {
+  const running = BuildJob.newQueued('b', NOW).markRunning(NOW);
+  assert.throws(() => running.markDispatchLost(NOW), BuildValidationError);
+});
