@@ -28,6 +28,7 @@ const orig = {
   agents: process.env.ASTROPRESS_AGENTS_FILE,
   rateLimit: process.env.ASTROPRESS_RATE_LIMIT,
   allowAnyHost: process.env.ASTROPRESS_ALLOW_ANY_HOST,
+  redisUrl: process.env.REDIS_URL,
 };
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
@@ -38,6 +39,7 @@ afterEach(async () => {
     ASTROPRESS_AGENTS_FILE: orig.agents,
     ASTROPRESS_RATE_LIMIT: orig.rateLimit,
     ASTROPRESS_ALLOW_ANY_HOST: orig.allowAnyHost,
+    REDIS_URL: orig.redisUrl,
   };
   for (const [key, val] of Object.entries(restore)) {
     if (val === undefined) delete process.env[key];
@@ -57,6 +59,10 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   process.env.ASTROPRESS_AGENTS_FILE = agentsFile;
   if (opts.rateLimit !== undefined) process.env.ASTROPRESS_RATE_LIMIT = String(opts.rateLimit);
   else delete process.env.ASTROPRESS_RATE_LIMIT;
+  // Perimeter testleri guard davranışını doğrular (storage-agnostic): her boot taze in-memory
+  // throttler ister. Ambient REDIS_URL Redis storage'ı boot'lar arası kalıcı yapar → state leak.
+  // Redis STORAGE doğruluğu ayrı redis-throttler.spec.ts'de (flushdb izolasyonlu) test edilir.
+  delete process.env.REDIS_URL;
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(BUILD_RUNNER).useValue(opts.runner ?? new FakeBuildRunner())
     .compile();
