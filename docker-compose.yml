@@ -1,4 +1,4 @@
-# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API) + mcp-http (MCP Streamable HTTP) + postgres (dev DB).
+# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API) + mcp-http (MCP Streamable HTTP) + postgres (dev DB) + redis (opt-in bullmq engine + throttler storage).
 # Config tek kaynak: sites.json tüketicilere (web/admin/mcp-http) read-only, tek yazar backend.
 # State (.astropress: audit/tasks) admin + mcp-http'ye read-write; config ile karışmaz.
 services:
@@ -39,6 +39,8 @@ services:
       ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
       PORT: "3000"
       DATABASE_URL: postgres://astropress:astropress@postgres:5432/astropress
+      REDIS_URL: redis://redis:6379
+      ASTROPRESS_BUILDS: ${ASTROPRESS_BUILDS:-file}
     volumes:
       - .:/app
       - /app/node_modules
@@ -71,6 +73,15 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U astropress"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
