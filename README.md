@@ -71,10 +71,10 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 
 ## Docker ile geliştirme
 
-Tek imaj, beş servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323), `postgres` (dev DB, 5432).
+Tek imaj, altı servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323), `postgres` (dev DB, 5432), `redis` (`redis:7-alpine`, 6379 — opt-in bullmq engine + throttler Redis storage; engine default `file`).
 
 ```bash
-docker compose up --build                  # web + admin + backend + mcp-http + postgres
+docker compose up --build                  # web + admin + backend + mcp-http + postgres + redis
 docker compose run --rm backend npm test   # backend testleri container içinde
 docker compose down
 ```
@@ -109,7 +109,7 @@ Controller → use-case → domain; domain hataları exception filter'lar ile HT
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 158 kontrol (74 sites + 54 builds + 30 security; DATABASE_URL unset iken 11 Postgres skip)
+npm --prefix backend test                                      # 170 kontrol (74 sites + 59 builds + 37 security; DATABASE_URL unset iken 11 Postgres + REDIS_URL unset iken 4 bullmq + 7 throttler skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -145,7 +145,7 @@ MCP köprüsünün güvenlik modeli NestJS backend'e port edildi (merkezi `backe
 
 - **Kimlik:** header-claim (loopback-trusted, token yok). Eksik header → default `content-studio` (`publish:false` → self-publish yok). Unknown → 401.
 - **Registry:** kök `agents.json` tek-kaynak (sites.json emsali); MCP `auth.mjs` (`ROOT`) + backend `AgentRegistry` birlikte okur.
-- **Rate-limit:** `@nestjs/throttler` v6, per-agent tracker (`req.agent.id`), GET exempt (poll-friendly), default 60 mutation/dk/agent/route, in-memory (Group E'de Redis swap).
+- **Rate-limit:** `@nestjs/throttler` v6, per-agent tracker (`req.agent.id`), GET exempt (poll-friendly), default 60 mutation/dk/agent/route. Storage: default in-memory; `REDIS_URL` set → Redis storage (multi-instance-ready rate-limit). Guard/config değişmez (D1 seam swap).
 - **Fail-closed:** policy map'te olmayan route → 403 (yeni endpoint açıkça eklenmeli). Denied → 403 + `Logger.warn` (full audit store MCP concern).
 - **Env:** `HOST` (bind, default `127.0.0.1`), `ASTROPRESS_ALLOW_ANY_HOST=1` (Host kontrol devre-dışı, container), `ASTROPRESS_RATE_LIMIT` (limit override), `ASTROPRESS_AGENTS_FILE` (registry test seam).
 
@@ -182,6 +182,23 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
   Dört adapter (`memory`/`file`/`sqlite`/`postgres`) aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
   Postgres testleri `DATABASE_URL` unset iken skip olur (bracket Docker'sız yeşil); Docker dev servisi: `docker compose up -d postgres`.
 - Bu slice yerel geliştirme içindir; **D1 security perimeter** (loopback bind + Host guard + header kimlik + RBAC + per-agent rate-limit + 1MB body) MCP modelini backend'e taşır (aşağıya bkz.). Gerçek token/OAuth Faz-2+.
+
+### Builds engine (opt-in durable)
+
+`ASTROPRESS_BUILDS=file` (default, in-process serial worker) | `bullmq` (Redis durable queue).
+`ASTROPRESS_STORAGE`'tan orthogonal — builds state her iki mode'da file read-model.
+
+- `file`: queued job'lar repo'da, kick ile resume (I2); concurrency 1, no-retry.
+- `bullmq`: `REDIS_URL` (default `redis://localhost:6379`) gerekir; queued job'lar Redis'te survive
+  (durability), BullMQ Worker concurrency 1 / attempts 1 (parity), stalled→failed interrupted.
+  HTTP contract her iki mode'da identical (POST 201 · GET 200/404 · list DESC · 429 queue-full).
+- **Redis down (opt-in tradeoff):** `ASTROPRESS_BUILDS=bullmq` + Redis down iken app yine boot eder
+  (boot-safe connection), GET/read çalışır (file read-model); mutation'lar fail-closed döner
+  (build dispatch + throttler, bounded ~2s wait sonrası 500 — hang yok, fail-open yok).
+  `file` mode Redis gerektirmez; bullmq'nin opt-in olma sebebi budur.
+
+Throttler storage: `REDIS_URL` set → Redis (multi-instance-ready rate-limit); absent → in-memory.
+Guard/config değişmez (D1 seam). Docker: `redis:7-alpine` service (opt-in).
 
 ## Dizin yapısı
 
@@ -221,8 +238,8 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 │   ├── src/security/         # D1 perimeter: domain (agent/errors) ← infrastructure (AgentRegistry) ← interface (host/identity middleware · permission/throttler guard · policy)
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
 │   ├── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
-│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build (54)
-│   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e (30)
+│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build + bullmq durable engine (59)
+│   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e + throttler Redis storage (37)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -337,7 +354,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS **158 kontrol** (74 sites + 54 builds + 30 security; 11 Postgres skip-if-unavailable). sites: domain + use-case + DI + file/sqlite/postgres adapter
+- **Backend (`npm run backend:ci`):** NestJS **170 kontrol** (74 sites + 59 builds + 37 security; 11 Postgres + 4 bullmq + 7 throttler skip-if-unavailable; Redis'li 159 pass/11 skip). sites: domain + use-case + DI + file/sqlite/postgres adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den
@@ -348,13 +365,14 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Worker mantığı fake runner ile, spawn wiring tek gerçek-build testi ile kanıtlı. HTTP e2e: gerçek express + `fetch`, 201/404.
 - **Operasyonel sınırlar (P2.4 + D1 — local-dev only):** Backend HTTP API **D1 security perimeter** içerir (aşağıya bkz.):
   loopback bind + Host guard + header-claim kimlik + merkezi RBAC + per-agent rate-limit + 1MB body-limit. Gerçek token/OAuth yok
-  (loopback-trusted header) → yalnız yerel geliştirme için. Kuyruk hâlâ sınırsız (unbounded) + retention yok; `builds.json` her
-  istekte tümüyle parse/revalidate edilir (O(n)). **Faz-2 in-slice hardening (I1+M2+M3+M4+I2+M1) uygulandı:** atomic state write (tmp+rename →
+  (loopback-trusted header) → yalnız yerel geliştirme için. Kuyruk bounded (queue-full → 429) + retention (keep-last-N terminal prune)
+  uygulandı (D2); `builds.json` her istekte tümüyle parse/revalidate edilir (O(n), retention ile bounded). **Faz-2 in-slice hardening (I1+M2+M3+M4+I2+M1) uygulandı:** atomic state write (tmp+rename →
   crash mid-write truncated dosya bırakmaz), corrupt `builds.json` self-heal (quarantine `.corrupt` + boş state; transient IO rethrow),
   boot/kick crash-safe (backend boot'u brick olmaz, unhandled-rejection yok), timeout cross-platform process-tree kill (orphan grandchild bırakmaz),
   boot queued-resume (restart'ta `queued` job'lar da kurtarılır — I2), sites e2e state isolation (M1).
-  **Kalan debt (Faz-2 backlog):** builds retention + queue-bound (D2, bounded); BullMQ+Redis durable queue (Group E — throttler storage Redis swap seam hazır).
-  Gerçek token/OAuth + distributed registry Faz-2+; Faz 3 (EventStore) tam recovery getirir.
+  **D2 ✔** — builds retention + queue-bound (`ASTROPRESS_BUILD_QUEUE_LIMIT`, default 10 → 429 queue-full; `ASTROPRESS_BUILD_RETENTION`, default 50 keep-last-N terminal prune).
+  **Group E ✔** — BullMQ+Redis durable engine (opt-in, `ASTROPRESS_BUILDS=bullmq`) + throttler Redis storage (`REDIS_URL`); engine bölümüne bkz.
+  Kalan debt yalnız Faz-2+ / Faz-3: gerçek token/OAuth + distributed registry Faz-2+; multi-instance concurrency N future seam (mevcut parity concurrency 1); Faz 3 (EventStore) tam recovery getirir.
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
@@ -403,7 +421,9 @@ MCP köprüsü üzerinden yapılır.
    Depolama varsayılan olarak dosya tabanlı (Markdown + JSON, git-native); `sqlite` + `postgres` opt-in katman olarak eklendi
    (dört adapter aynı contract'tan geçer). Postgres (P2.2b) ✔ — pg.Pool, Docker dev servisi, skip-if-unavailable test.
    **Build worker (P2.4) ✔** — backend `builds` slice: async job kuyruğu + serial worker (file-backed `.astropress/builds.json`),
-   `POST/GET /builds`, boot recovery. Strangler: MCP `ops.mjs` şimdilik kalır; Faz 2 BullMQ+Redis, Faz 3 EventStore.
+   `POST/GET /builds`, boot recovery. ~~BullMQ+Redis durable queue (Group E)~~ ✔ — opt-in durable engine + throttler Redis storage
+   (`ASTROPRESS_BUILDS=bullmq` + `REDIS_URL`; Docker `redis:7-alpine` + CI redis service). Multi-instance concurrency N future seam (mevcut parity concurrency 1).
+   Strangler: MCP `ops.mjs` şimdilik kalır; BullMQ+Redis opt-in olarak geldi, Faz 3 EventStore.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
 
