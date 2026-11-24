@@ -7,7 +7,7 @@ import { BUILD_QUEUE_LIMIT, EnqueueBuild } from './application/enqueue-build';
 import { GetBuildJob } from './application/get-build-job';
 import { ListBuildJobs } from './application/list-build-jobs';
 import { BuildsController } from './builds.controller';
-import { REDIS_URL, defaultRedisUrl } from './infrastructure/bullmq/redis-connection';
+import { REDIS_URL, defaultRedisUrl } from '../infrastructure/redis-connection';
 import { BUILD_QUEUE, createBuildQueue } from './infrastructure/bullmq/build-queue';
 import { BullMqDispatcher } from './infrastructure/bullmq/bullmq-dispatcher';
 import { BullMqBuildWorker } from './infrastructure/bullmq/bullmq-build-worker';

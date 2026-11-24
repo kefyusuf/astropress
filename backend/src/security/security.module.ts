@@ -7,7 +7,7 @@ import { IdentityMiddleware } from './interface/identity.middleware';
 import { PermissionGuard } from './interface/permission.guard';
 import { AgentThrottlerGuard } from './interface/agent-throttler.guard';
 import { RedisThrottlerStorage } from './infrastructure/redis-throttler.storage';
-import { createRedisConnection } from '../builds/infrastructure/bullmq/redis-connection';
+import { createRedisConnection } from '../infrastructure/redis-connection';
 
 @Module({
   imports: [

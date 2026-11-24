@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { createRedisConnection } from './redis-connection';
+import { createRedisConnection } from '../../../infrastructure/redis-connection';
 
 export const BUILD_QUEUE = Symbol('BUILD_QUEUE');
 export const BUILD_QUEUE_NAME = 'astropress-builds';

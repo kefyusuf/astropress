@@ -5,7 +5,7 @@ import { BuildJob } from '../../domain/build-job';
 import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner } from '../../application/ports';
 import { BUILD_RETENTION } from '../../application/build-worker';
 import { BUILD_QUEUE_NAME } from './build-queue';
-import { REDIS_URL, createRedisConnection } from './redis-connection';
+import { REDIS_URL, createRedisConnection } from '../../../infrastructure/redis-connection';
 
 @Injectable()
 export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
