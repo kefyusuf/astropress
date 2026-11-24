@@ -6,8 +6,9 @@ export function defaultRedisUrl(): string {
   return process.env.REDIS_URL ?? 'redis://localhost:6379';
 }
 
-// BullMQ Worker blocking connection maxRetriesPerRequest:null ister. retryStrategy boot-safe:
-// Redis yoksa sonsuz retry yerine null (connection error event'e düşer, app brick olmaz).
+// BullMQ Worker blocking connection maxRetriesPerRequest:null ister. retryStrategy DEFAULT kalır:
+// Redis yoksa reconnect dener (null DEĞİL). Boot-safe'lik no-op 'error' listener + async Worker init
+// ile sağlanır (aşağıya bkz.) — retryStrategy ile değil.
 export function createRedisConnection(url: string): IORedis {
   const connection = new IORedis(url, { maxRetriesPerRequest: null, enableOfflineQueue: false });
   // Boot-safe (acceptance #7): Redis down'da ioredis 'error' event'i unhandled kalırsa Node process crash eder.

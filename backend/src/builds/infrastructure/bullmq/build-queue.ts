@@ -25,7 +25,11 @@ export function createBuildQueue(url: string, retention: number): Queue {
 }
 
 // Teardown: önce BullMQ close (listener cleanup), sonra shared connection disconnect (handle serbest).
+// try/finally: queue.close() reject etse de disconnect ÇALIŞIR (error-path socket leak yok — worker teardown emsali).
 export async function closeBuildQueue(queue: Queue): Promise<void> {
-  await queue.close();
-  queueConnections.get(queue)?.disconnect();
+  try {
+    await queue.close();
+  } finally {
+    queueConnections.get(queue)?.disconnect();
+  }
 }

@@ -20,7 +20,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(REDIS_URL) private readonly url: string,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     // Boot-safe: Redis yoksa Worker error event log'lanır, app brick OLMAZ (sites API boot eder).
     try {
       this.connection = createRedisConnection(this.url);
@@ -33,6 +33,19 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
       this.worker.on('error', (err) => this.logger.warn(`bullmq worker error: ${err.message}`));
     } catch (err) {
       this.logger.warn(`bullmq worker init başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // Boot recover parity (spec §7): stale running mirror → failed interrupted (BuildWorker.recover emsali).
+    // Best-effort: repo hatası boot'u brick ETMEZ (Redis-down dahil). Processor running-guard ile idempotent:
+    // recover failed yazarsa processor terminal skip eder; interrupted running asla re-run edilmez.
+    try {
+      const all = await this.repo.findAll();
+      for (const job of all) {
+        if (job.status === 'running') {
+          await this.repo.save(job.markFailed('interrupted', new Date().toISOString()));
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`bullmq boot recover başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

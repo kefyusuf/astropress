@@ -71,7 +71,7 @@ npm run smoke        # uçtan uca guardrail + RBAC + i18n (23 kontrol, gerçek b
 
 ## Docker ile geliştirme
 
-Tek imaj, altı servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323), `postgres` (dev DB, 5432), `redis` (`redis:7-alpine`, 6379 — opt-in bullmq engine + throttler Redis storage; engine default `file`).
+Tek imaj, altı servis (compose): `web` (astro dev, 4321), `admin` (http köprü + UI, 4322), `backend` (NestJS HTTP API, 3000), `mcp-http` (MCP Streamable HTTP, 4323), `postgres` (dev DB, 5432), `redis` (`redis:7-alpine`, 6379 — container `compose up` ile **her zaman** başlar; opt-in olan builds **engine**'i (`ASTROPRESS_BUILDS=bullmq`) ve throttler Redis storage, engine default `file`).
 
 ```bash
 docker compose up --build                  # web + admin + backend + mcp-http + postgres + redis
@@ -109,7 +109,7 @@ Controller → use-case → domain; domain hataları exception filter'lar ile HT
 
 ```bash
 npm --prefix backend run build && npm --prefix backend start   # http://localhost:3000
-npm --prefix backend test                                      # 170 kontrol (74 sites + 59 builds + 37 security; DATABASE_URL unset iken 11 Postgres + REDIS_URL unset iken 4 bullmq + 7 throttler skip)
+npm --prefix backend test                                      # 177 kontrol (74 sites + 64 builds + 39 security; DATABASE_URL unset iken 11 Postgres + REDIS_URL unset iken 9 bullmq + 9 throttler skip)
 ```
 
 | Endpoint | Ne yapar | Başarı | Hata |
@@ -188,17 +188,22 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 `ASTROPRESS_BUILDS=file` (default, in-process serial worker) | `bullmq` (Redis durable queue).
 `ASTROPRESS_STORAGE`'tan orthogonal — builds state her iki mode'da file read-model.
 
-- `file`: queued job'lar repo'da, kick ile resume (I2); concurrency 1, no-retry.
+- `file`: queued job'lar gitignore'lu working-tree dosyası `.astropress/builds.json`'da (repo read-model;
+  git-committed durability DEĞİL — process restart'ta dosya durur, kick ile resume (I2)); concurrency 1, no-retry.
 - `bullmq`: `REDIS_URL` (default `redis://localhost:6379`) gerekir; queued job'lar Redis'te survive
   (durability), BullMQ Worker concurrency 1 / attempts 1 (parity), stalled→failed interrupted.
   HTTP contract her iki mode'da identical (POST 201 · GET 200/404 · list DESC · 429 queue-full).
 - **Redis down (opt-in tradeoff):** `ASTROPRESS_BUILDS=bullmq` + Redis down iken app yine boot eder
-  (boot-safe connection), GET/read çalışır (file read-model); mutation'lar fail-closed döner
-  (build dispatch + throttler, bounded ~2s wait sonrası 500 — hang yok, fail-open yok).
+  (boot-safe connection), GET/read çalışır (file read-model); mutation'lar fail-closed döner:
+  build **dispatch** 500'ü ANINDA (`enableOfflineQueue:false` → `queue.add` hemen reject),
+  yalnız **throttler** sınırlı bekler (bounded `waitReady` ≤2s) sonra 500 — hang yok, fail-open yok.
+  Dispatch-rejection 500 bilinçli (intentional fail-closed): işlenmeyecek queued mirror 201 success
+  olarak bildirilmez — dürüst failure sinyali.
   `file` mode Redis gerektirmez; bullmq'nin opt-in olma sebebi budur.
 
 Throttler storage: `REDIS_URL` set → Redis (multi-instance-ready rate-limit); absent → in-memory.
-Guard/config değişmez (D1 seam). Docker: `redis:7-alpine` service (opt-in).
+Guard/config değişmez (D1 seam). Docker: `redis:7-alpine` container'ı `compose up` ile her zaman başlar;
+opt-in olan builds engine'i (`ASTROPRESS_BUILDS=bullmq`).
 
 ## Dizin yapısı
 
@@ -238,8 +243,8 @@ Guard/config değişmez (D1 seam). Docker: `redis:7-alpine` service (opt-in).
 │   ├── src/security/         # D1 perimeter: domain (agent/errors) ← infrastructure (AgentRegistry) ← interface (host/identity middleware · permission/throttler guard · policy)
 │   ├── src/scripts/bridge.ts # seed/export CLI (sites.json ↔ DB)
 │   ├── test/sites/           # node:test: domain/DI/file/sqlite/postgres/HTTP e2e + contract + bridge (74)
-│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build + bullmq durable engine (59)
-│   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e + throttler Redis storage (37)
+│   ├── test/builds/          # node:test: domain/file/worker/HTTP e2e + real-build + bullmq durable engine (64)
+│   └── test/security/        # node:test: registry/policy unit + perimeter HTTP e2e + throttler Redis storage (39)
 ├── admin/index.html          # gerçek yönetim arayüzü (fetch → /api, simülasyon yok)
 ├── test/*.test.mjs           # node:test birim + entegrasyon suite'i (30 kontrol)
 ├── .github/workflows/ci.yml  # CI: node 20/22/24 · build · test · smoke
@@ -354,7 +359,9 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   Gerçek MCP çağrıları + gerçek `astro build`. Hepsi geçince `SMOKE OK`, exit 0.
 - **MCP HTTP (`npm run smoke:http`):** Streamable HTTP transport üzerinden aynı guardrail + RBAC + i18n
   zinciri + session isolation + DELETE cleanup + bilinmeyen agent reddi. stdio smoke (23) korunur.
-- **Backend (`npm run backend:ci`):** NestJS **170 kontrol** (74 sites + 59 builds + 37 security; 11 Postgres + 4 bullmq + 7 throttler skip-if-unavailable; Redis'li 159 pass/11 skip). sites: domain + use-case + DI + file/sqlite/postgres adapter
+- **Backend (`npm run backend:ci`):** NestJS **177 kontrol** (74 sites + 64 builds + 39 security). File-mode default
+  (REDIS_URL+DATABASE_URL unset): **148 pass + 29 skip** (11 Postgres + 9 bullmq + 9 throttler skip-if-unavailable);
+  Redis'li: **166 pass / 11 skip**. sites: domain + use-case + DI + file/sqlite/postgres adapter
   + **HTTP e2e**: gerçek express sunucusu + `fetch`, 201/400/404/409, file, sqlite ve postgres modları + **paylaşımlı contract**
   (dört adapter aynı port testinden geçer) + **seed/export köprüsü** (json ↔ DB round-trip) + **registry contract**:
   committed `sites.json` her kaydı domain doğrulamasından geçer, id'ler tekrarsız. Config'in bozuk edit'leri build'den

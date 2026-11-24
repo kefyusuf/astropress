@@ -125,3 +125,49 @@ test('increment: window expire + block aktif → block key\'den blocked okunur',
     assert.equal(await ctx.redis.exists(hitKey), 0, 'blocked iken INCR hit key yeniden kurmamalı');
   } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
 });
+
+// T3-a: atomic set-once (NX). İki EŞZAMANLI first-over-limit isteği block'i iki kez kuramaz;
+// yalnız kazanan SET block TTL'ini belirler. Deterministik yarış seam'i: ikinci SET komutu 250ms
+// geciktirilir → NX yoksa geç SET TTL'i blockDuration'a RESET eder (sliding block); NX ile no-op.
+test('increment: concurrent over-limit → block set-once (NX, ikinci SET TTL resetlemez)', { skip }, async (t) => {
+  let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
+  try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  try {
+    for (let i = 0; i < 3; i++) await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
+    const blockKey = 'throttler:default:agent-nx:block';
+    const origSet: (...args: any[]) => Promise<unknown> = ctx.redis.set.bind(ctx.redis);
+    let setCalls = 0;
+    // Test seam: over-limit SET'lerini sıralı hale getir (ikincisi 250ms geç) — yarış penceresi ölçülebilir.
+    (ctx.redis as any).set = (...args: any[]) => {
+      setCalls++;
+      if (setCalls === 2) return new Promise((r) => setTimeout(r, 250)).then(() => origSet(...args));
+      return origSet(...args);
+    };
+    const [r1, r2] = await Promise.all([
+      ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default'),
+      ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default'),
+    ]);
+    assert.equal(r1.isBlocked, true);
+    assert.equal(r2.isBlocked, true);
+    const ttl = await ctx.redis.pttl(blockKey);
+    assert.ok(ttl > 0 && ttl <= 60000 - 150, `ikinci SET block TTL'ini resetlememeli (NX set-once): ${ttl}`);
+  } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
+});
+
+// T3-d: orphan-key heal. Crash INCR ile PEXPIRE arasında kaldıysa hit key TTL'siz orphan (pttl -1)
+// olur → sonraki increment unblocked INCR path'inde pexpire ile heal eder (window bounded kalır).
+test('increment: TTL-less orphan hit key → pexpire ile heal (crash between INCR/PEXPIRE)', { skip }, async (t) => {
+  let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
+  try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  try {
+    const hitKey = 'throttler:default:agent-orphan';
+    await ctx.redis.set(hitKey, '2'); // TTL yok — crash simülasyonu (INCR oldu, PEXPIRE olmadı)
+    assert.equal(await ctx.redis.pttl(hitKey), -1);
+    const r = await ctx.storage.increment('agent-orphan', 60000, 5, 60000, 'default');
+    assert.equal(r.totalHits, 3);
+    assert.equal(r.isBlocked, false);
+    const healed = await ctx.redis.pttl(hitKey);
+    assert.ok(healed > 0 && healed <= 60000, `orphan key TTL kazanmalı (heal): ${healed}`);
+    assert.ok(r.timeToExpire > 0 && r.timeToExpire <= 60, 'timeToExpire saniye parity korunmalı');
+  } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
+});

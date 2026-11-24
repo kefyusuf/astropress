@@ -70,10 +70,18 @@ test('execute dispatches job via BuildDispatcher port (seam)', async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-enqueue-'));
   const repo = new FileBuildJobRepository(path.join(dir, 'builds.json'));
   const dispatched: BuildJob[] = [];
-  const fakeDispatcher: BuildDispatcher = { dispatch: async (j) => { dispatched.push(j); } };
+  // T1-a: ORDERING kanıtı — dispatch() ANINDA job repo'da persist edilmiş mi? (eventual persistence değil)
+  let atDispatch: BuildJob | null = null;
+  const fakeDispatcher: BuildDispatcher = {
+    dispatch: async (j) => { dispatched.push(j); atDispatch = await repo.findById(j.id); },
+  };
   const enqueue = new EnqueueBuild(repo, fakeDispatcher, 10);
   const job = await enqueue.execute();
   assert.equal(dispatched.length, 1);
   assert.equal(dispatched[0].id, job.id);
+  assert.ok(atDispatch, 'job dispatch ANINDA repo\'da olmalı (save-önce-dispatch ordering)');
+  const persisted = atDispatch as BuildJob | null;
+  assert.equal(persisted!.id, job.id);
+  assert.equal(persisted!.status, 'queued');
   assert.ok(await repo.findById(job.id), 'repo save dispatch-öncesi');
 });

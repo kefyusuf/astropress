@@ -31,15 +31,18 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShu
     const totalHits = await this.redis.incr(redisKey);
     if (totalHits === 1) await this.redis.pexpire(redisKey, ttl);
     const pttl = await this.redis.pttl(redisKey);
+    // T3-d: crash INCR ile PEXPIRE arasında kaldıysa TTL'siz orphan (pttl -1) → heal (window bounded kalır).
+    if (pttl === -1) await this.redis.pexpire(redisKey, ttl);
     // I2 parity: saniye (Math.ceil(ms/1000)) — in-memory service.js:79,82; guard header'a raw yazar.
     const timeToExpire = Math.ceil((pttl > 0 ? pttl : ttl) / 1000);
     let isBlocked = false;
     let timeToBlockExpire = 0;
     if (totalHits > limit) {
       // Block yalnızca blocked DEĞİLKEN kurulur (yukarıdaki early-return) → set-once, non-sliding.
+      // T3-a: NX — iki eşzamanlı first-over-limit isteğinde yalnız kazanan SET block kurar (TTL uzamaz).
       isBlocked = true;
       timeToBlockExpire = Math.ceil(blockDuration / 1000);
-      await this.redis.set(blockKey, '1', 'PX', blockDuration);
+      await this.redis.set(blockKey, '1', 'PX', blockDuration, 'NX');
     }
     return { totalHits, timeToExpire, isBlocked, timeToBlockExpire };
   }
