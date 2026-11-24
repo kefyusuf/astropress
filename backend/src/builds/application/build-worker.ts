@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner } from './ports';
+import { BuildJob } from '../domain/build-job';
+import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner, BuildDispatcher } from './ports';
 
 export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
 
 @Injectable()
-export class BuildWorker implements OnModuleInit {
+export class BuildWorker implements OnModuleInit, BuildDispatcher {
   private readonly logger = new Logger(BuildWorker.name);
   private drainPromise: Promise<void> | null = null;
 
@@ -40,6 +41,11 @@ export class BuildWorker implements OnModuleInit {
     this.drain().catch((err) => {
       this.logger.warn(`drain başarısız: ${err instanceof Error ? err.message : String(err)}`);
     });
+  }
+
+  // BuildDispatcher seam (E): file mode dispatch = kick (background drain). job zaten repo'da queued.
+  async dispatch(_job: BuildJob): Promise<void> {
+    this.kick();
   }
 
   // Single-flight: aktif drain varsa aynı promise döner (çift işleme yok).

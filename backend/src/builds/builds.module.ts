@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { BUILD_JOB_REPOSITORY, BUILD_RUNNER } from './application/ports';
+import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_DISPATCHER } from './application/ports';
 import { BUILDS_FILE, FileBuildJobRepository, defaultBuildsFile } from './infrastructure/file-build-job.repository';
 import { ASTROPRESS_ROOT, AstroBuildRunner, defaultRoot } from './infrastructure/astro-build-runner';
 import { BUILD_RETENTION, BuildWorker } from './application/build-worker';
@@ -18,10 +18,11 @@ import { BuildsController } from './builds.controller';
     { provide: BUILD_JOB_REPOSITORY, useClass: FileBuildJobRepository },
     { provide: BUILD_RUNNER, useClass: AstroBuildRunner },
     BuildWorker,
+    { provide: BUILD_DISPATCHER, useExisting: BuildWorker },
     EnqueueBuild,
     GetBuildJob,
     ListBuildJobs,
   ],
-  exports: [BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildWorker, EnqueueBuild, GetBuildJob, ListBuildJobs],
+  exports: [BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_DISPATCHER, BuildWorker, EnqueueBuild, GetBuildJob, ListBuildJobs],
 })
 export class BuildsModule {}

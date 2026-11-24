@@ -1,8 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { BuildJob } from '../domain/build-job';
 import { BuildQueueFullError } from '../domain/errors';
-import { BUILD_JOB_REPOSITORY, BuildJobRepository } from './ports';
-import { BuildWorker } from './build-worker';
+import { BUILD_JOB_REPOSITORY, BUILD_DISPATCHER, BuildJobRepository, BuildDispatcher } from './ports';
 
 export const BUILD_QUEUE_LIMIT = Symbol('BUILD_QUEUE_LIMIT');
 
@@ -13,7 +12,7 @@ let seq = 0;
 export class EnqueueBuild {
   constructor(
     @Inject(BUILD_JOB_REPOSITORY) private readonly repo: BuildJobRepository,
-    private readonly worker: BuildWorker,
+    @Inject(BUILD_DISPATCHER) private readonly dispatcher: BuildDispatcher,
     @Inject(BUILD_QUEUE_LIMIT) private readonly limit: number,
   ) {}
 
@@ -23,8 +22,8 @@ export class EnqueueBuild {
     if (queued >= this.limit) throw new BuildQueueFullError(this.limit);
     const id = `build-${++seq}-${Date.now().toString(36)}`;
     const job = BuildJob.newQueued(id, new Date().toISOString());
-    await this.repo.save(job);
-    this.worker.kick();
+    await this.repo.save(job); // read-model mirror dispatch-ÖNCE (parity)
+    await this.dispatcher.dispatch(job);
     return job;
   }
 }

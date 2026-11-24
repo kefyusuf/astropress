@@ -10,6 +10,7 @@ import { FileBuildJobRepository } from '../../src/builds/infrastructure/file-bui
 import { BuildJob } from '../../src/builds/domain/build-job';
 import { BuildQueueFullError } from '../../src/builds/domain/errors';
 import { FakeBuildRunner } from './fake-build-runner';
+import { BuildDispatcher } from '../../src/builds/application/ports';
 
 const NOW = '2026-11-23T10:00:00.000Z';
 let dir: string;
@@ -63,4 +64,16 @@ test('running job does not count toward queued bound', async () => {
   const job = await enqueue.execute();
   await worker.drain();
   assert.equal(job.status, 'queued');
+});
+
+test('execute dispatches job via BuildDispatcher port (seam)', async () => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-enqueue-'));
+  const repo = new FileBuildJobRepository(path.join(dir, 'builds.json'));
+  const dispatched: BuildJob[] = [];
+  const fakeDispatcher: BuildDispatcher = { dispatch: async (j) => { dispatched.push(j); } };
+  const enqueue = new EnqueueBuild(repo, fakeDispatcher, 10);
+  const job = await enqueue.execute();
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].id, job.id);
+  assert.ok(await repo.findById(job.id), 'repo save dispatch-öncesi');
 });
