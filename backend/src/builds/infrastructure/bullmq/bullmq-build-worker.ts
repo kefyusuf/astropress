@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { BuildJob } from '../../domain/build-job';
 import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner } from '../../application/ports';
 import { BUILD_RETENTION } from '../../application/build-worker';
-import { BUILD_QUEUE_NAME } from './build-queue';
+import { BUILD_QUEUE_NAME, BUILD_QUEUE } from './build-queue';
 import { REDIS_URL, createRedisConnection } from '../../../infrastructure/redis-connection';
 
 @Injectable()
@@ -18,6 +18,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BUILD_RUNNER) private readonly runner: BuildRunner,
     @Inject(BUILD_RETENTION) private readonly retention: number,
     @Inject(REDIS_URL) private readonly url: string,
+    @Inject(BUILD_QUEUE) private readonly queue: Queue,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -42,11 +43,27 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
       for (const job of all) {
         if (job.status === 'running') {
           await this.repo.save(job.markFailed('interrupted', new Date().toISOString()));
+        } else if (job.status === 'queued') {
+          const bullJob = await this.boundedGetJob(job.id);
+          if (!bullJob) await this.repo.save(job.markDispatchLost(new Date().toISOString()));
         }
       }
     } catch (err) {
       this.logger.warn(`bullmq boot recover başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  // Boot-safe: getJob unreachable Redis'te hang eder (throw etmez). 2s timeout race → reject →
+  // onModuleInit catch → skip. katılımcı promise'ler handle'lı (unhandled-rejection crash yok).
+  private boundedGetJob(id: string): Promise<Job | undefined> {
+    const getJob = this.queue.getJob(id);
+    getJob.catch(() => {});
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('getJob timeout — Redis unreachable')), 2000);
+      timer.unref();
+    });
+    return Promise.race([getJob, timeout]).finally(() => clearTimeout(timer));
   }
 
   async onModuleDestroy(): Promise<void> {

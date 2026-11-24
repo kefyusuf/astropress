@@ -243,3 +243,33 @@ test('bullmq: retention prune — terminal keep-last-N, queued/running korunur (
     runner.unblock();
   }
 });
+
+test('bullmq: orphan queued mirror (dispatch yok) boot → failed dispatch-lost', { skip }, async (t) => {
+  try { await pingRedis(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  await flushRedis();
+  const orphan = BuildJob.newQueued('build-orphan-1', NOW);
+  const { url } = await boot(new FakeBuildRunner(), redisUrl!, (dir) => seedJobs(dir, [orphan]));
+  const job = await (await fetch(`${url}/builds/build-orphan-1`)).json();
+  assert.equal(job.status, 'failed');
+  assert.equal(job.error, 'dispatch-lost');
+});
+
+test('bullmq: dispatched queued mirror korunur (false-positive yok)', { skip }, async (t) => {
+  try { await pingRedis(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  await flushRedis();
+  const id = 'build-dispatched-1';
+  const q = createBuildQueue(redisUrl!, 50);
+  await q.add('build', { jobId: id }, { jobId: id });
+  await closeBuildQueue(q);
+  const seeded = BuildJob.newQueued(id, NOW);
+  const { url } = await boot(new FakeBuildRunner(), redisUrl!, (dir) => seedJobs(dir, [seeded]));
+  const job = await poll(url, id);
+  assert.equal(job.status, 'succeeded');
+});
+
+test('bullmq: Redis-down orphan reconcile boot-safe (skip, brick yok)', { skip }, async (t) => {
+  try { await pingRedis(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  const { url } = await boot(new FakeBuildRunner(), 'redis://127.0.0.1:1', (dir) => seedJobs(dir, [BuildJob.newQueued('build-x', NOW)]));
+  const res = await fetch(`${url}/builds/build-x`);
+  assert.equal(res.status, 200);
+});
