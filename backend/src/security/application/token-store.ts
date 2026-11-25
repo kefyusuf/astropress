@@ -8,6 +8,6 @@ export function hashToken(token: string): string {
 }
 
 export interface TokenStore {
-  findAgentByHash(hash: string): string | null;
-  setHash(agentId: string, hash: string): void;
+  findAgentByHash(hash: string): Promise<string | null>;
+  setHash(agentId: string, hash: string): Promise<void>;
 }

@@ -6,8 +6,12 @@ import { AgentRequest } from './agent-request';
 export class IdentityMiddleware implements NestMiddleware<AgentRequest> {
   constructor(@Inject(IDENTITY_RESOLVER) private readonly resolver: IdentityResolver) {}
 
-  use(req: AgentRequest, res: unknown, next: (error?: any) => void): void {
-    req.agent = this.resolver.resolve(req);
-    next();
+  async use(req: AgentRequest, res: unknown, next: (error?: any) => void): Promise<void> {
+    try {
+      req.agent = await this.resolver.resolve(req);
+      next();
+    } catch (err) {
+      next(err);
+    }
   }
 }

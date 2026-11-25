@@ -144,8 +144,8 @@ MCP köprüsünün güvenlik modeli NestJS backend'e port edildi (merkezi `backe
 | `/builds` | POST | `edit` (build = operasyonel mutation; reader ✗ — MCP divergence) |
 
 - **Kimlik:** header-claim (loopback-trusted, token yok). Eksik header → default `content-studio` (`publish:false` → self-publish yok). Unknown → 401.
-- **Faz-2+ token auth (opt-in):** `ASTROPRESS_AUTH=header` (default, yukarıdaki parity) | `token` (statik API key bearer). Token mode: `Authorization: Bearer astro_<token>` → sha256 → gitignore'lu `.astropress/agent-tokens.json` (yalnız hash, timing-safe) → agent + RBAC. Eksik/geçersiz token → 401 fail-closed (fallback yok, `X-Astropress-Agent` ignore). Mint: `npm --prefix backend run token:mint -- <agentId>` (plaintext bir kez basılır, re-mint = rotate). RBAC/throttler/host/body iki modda identical; MCP header kalır (backend-only). Distributed registry sonraki faz.
-- **Registry:** kök `agents.json` tek-kaynak (sites.json emsali); MCP `auth.mjs` (`ROOT`) + backend `AgentRegistry` birlikte okur.
+- **Faz-2+ token auth (opt-in):** `ASTROPRESS_AUTH=header` (default, yukarıdaki parity) | `token` (statik API key bearer). Token mode: `Authorization: Bearer astro_<token>` → sha256 → gitignore'lu `.astropress/agent-tokens.json` (yalnız hash, timing-safe) → agent + RBAC. Eksik/geçersiz token → 401 fail-closed (fallback yok, `X-Astropress-Agent` ignore). Mint: `npm --prefix backend run token:mint -- <agentId>` (plaintext bir kez basılır, re-mint = rotate). RBAC/throttler/host/body iki modda identical; MCP header kalır (backend-only). Faz-4 distributed registry: `ASTROPRESS_STORAGE=postgres` → agent tanımları + token hash'leri shared Postgres (multi-instance); aşağıya bkz.
+- **Registry:** kök `agents.json` tek-kaynak (sites.json emsali); MCP `auth.mjs` (`ROOT`) + backend `AgentRegistry` birlikte okur. Postgres modunda (`ASTROPRESS_STORAGE=postgres`) tanımlar boot'ta `agents` tablosuna seed edilir (idempotent upsert, config-as-code); okumalar per-request DB query.
 - **Rate-limit:** `@nestjs/throttler` v6, per-agent tracker (`req.agent.id`), GET exempt (poll-friendly), default 60 mutation/dk/agent/route. Storage: default in-memory; `REDIS_URL` set → Redis storage (multi-instance-ready rate-limit). Guard/config değişmez (D1 seam swap).
 - **Fail-closed:** policy map'te olmayan route → 403 (yeni endpoint açıkça eklenmeli). Denied → 403 + `Logger.warn` (full audit store MCP concern).
 - **Env:** `HOST` (bind, default `127.0.0.1`), `ASTROPRESS_ALLOW_ANY_HOST=1` (Host kontrol devre-dışı, container), `ASTROPRESS_RATE_LIMIT` (limit override), `ASTROPRESS_AGENTS_FILE` (registry test seam), `ASTROPRESS_AUTH=header|token` (kimlik axis, default header).
@@ -183,6 +183,7 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
   Dört adapter (`memory`/`file`/`sqlite`/`postgres`) aynı **paylaşımlı contract** testinden geçer → port soyutlaması kanıtlı.
   Postgres testleri `DATABASE_URL` unset iken skip olur (bracket Docker'sız yeşil); Docker dev servisi: `docker compose up -d postgres`.
 - Bu slice yerel geliştirme içindir; **D1 security perimeter** (loopback bind + Host guard + header kimlik + RBAC + per-agent rate-limit + 1MB body) MCP modelini backend'e taşır (aşağıya bkz.). Gerçek token/OAuth Faz-2+.
+- **Faz-4 distributed registry:** `postgres` modunda security slice da shared store kullanır: `agents` (boot-seed upsert — kök `agents.json` doğruluk kaynağı, drift boot'ta düzelir) + `agent_tokens` (runtime, postgres authoritative; bir instance'ta mint → diğerinde doğrulama anında). `token:mint` CLI postgres modunda DB'ye yazar. Ayrı axis yok — `ASTROPRESS_STORAGE` yeterli; `ASTROPRESS_AUTH` ile ortogonal.
 
 ### Builds engine (opt-in durable)
 
@@ -388,7 +389,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   boot queued-resume (restart'ta `queued` job'lar da kurtarılır — I2), sites e2e state isolation (M1).
   **D2 ✔** — builds retention + queue-bound (`ASTROPRESS_BUILD_QUEUE_LIMIT`, default 10 → 429 queue-full; `ASTROPRESS_BUILD_RETENTION`, default 50 keep-last-N terminal prune).
   **Group E ✔** — BullMQ+Redis durable engine (opt-in, `ASTROPRESS_BUILDS=bullmq`) + throttler Redis storage (`REDIS_URL`); engine bölümüne bkz.
-  **Faz-3 EventStore ✔** (event-sourced full recovery) + **concurrency-N ✔** (`ASTROPRESS_BUILD_CONCURRENCY`, per-build izole root). **Faz-2+ token auth ✔** — statik API key bearer (opt-in `ASTROPRESS_AUTH=token`); distributed registry sonraki faz.
+  **Faz-3 EventStore ✔** (event-sourced full recovery) + **concurrency-N ✔** (`ASTROPRESS_BUILD_CONCURRENCY`, per-build izole root). **Faz-2+ token auth ✔** — statik API key bearer (opt-in `ASTROPRESS_AUTH=token`); distributed registry ✔ (Faz-4: shared postgres agents+tokens, boot-seed upsert).
 - **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 

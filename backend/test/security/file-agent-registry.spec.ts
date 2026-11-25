@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AgentRegistry, defaultAgentsFile } from '../../src/security/infrastructure/agent-registry';
+import { FileAgentRegistry, defaultAgentsFile } from '../../src/security/infrastructure/file-agent-registry';
 import { UnknownAgentError } from '../../src/security/domain/errors';
 
 const FIXTURE = {
@@ -23,15 +23,15 @@ afterEach(() => {
   else process.env.ASTROPRESS_AGENTS_FILE = origAgentsFile;
 });
 
-function makeRegistry(): AgentRegistry {
+function makeRegistry(): FileAgentRegistry {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-registry-'));
   const file = path.join(tmpDir, 'agents.json');
   fs.writeFileSync(file, JSON.stringify(FIXTURE), 'utf8');
-  return new AgentRegistry(file);
+  return new FileAgentRegistry(file);
 }
 
-test('getAgent known returns {id,name,perms}', () => {
-  const agent = makeRegistry().getAgent('content-studio');
+test('getAgent known returns {id,name,perms}', async () => {
+  const agent = await makeRegistry().getAgent('content-studio');
   assert.deepEqual(agent, {
     id: 'content-studio',
     name: 'İçerik Stüdyosu',
@@ -39,22 +39,22 @@ test('getAgent known returns {id,name,perms}', () => {
   });
 });
 
-test('getAgent unknown throws UnknownAgentError with MCP-parity message', () => {
+test('getAgent unknown rejects UnknownAgentError with MCP-parity message', async () => {
   const registry = makeRegistry();
-  assert.throws(() => registry.getAgent('hacker'), UnknownAgentError);
-  assert.throws(() => registry.getAgent('hacker'), /Bilinmeyen agent: hacker/);
+  await assert.rejects(registry.getAgent('hacker'), UnknownAgentError);
+  await assert.rejects(registry.getAgent('hacker'), /Bilinmeyen agent: hacker/);
 });
 
-test('getAgent prototype-chain names throw UnknownAgentError (own-property guard)', () => {
+test('getAgent prototype-chain names reject UnknownAgentError (own-property guard)', async () => {
   const registry = makeRegistry();
   for (const id of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
-    assert.throws(() => registry.getAgent(id), UnknownAgentError);
-    assert.throws(() => registry.getAgent(id), /Bilinmeyen agent: /);
+    await assert.rejects(registry.getAgent(id), UnknownAgentError);
+    await assert.rejects(registry.getAgent(id), /Bilinmeyen agent: /);
   }
 });
 
-test('listAgents returns all 5 agents', () => {
-  const agents = makeRegistry().listAgents();
+test('listAgents returns all 5 agents', async () => {
+  const agents = await makeRegistry().listAgents();
   assert.equal(agents.length, 5);
   assert.deepEqual(agents.map((a) => a.id).sort(), ['commerce-bot', 'content-studio', 'operator', 'reader', 'seo-agent']);
 });
