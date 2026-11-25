@@ -77,9 +77,31 @@ async function flushRedis(): Promise<void> {
   finally { c.disconnect(); }
 }
 
-// Repo read-model tohumu: FileBuildJobRepository her okumada dosyayı parse eder → doğrudan write güvenli.
+// Repo read-model tohumu. True ES (Faz-3): event log tek kaynak, mirror init'te event'lerden rebuild
+// edilir → tohum hem mirror'ı hem event log'u yazar (crash/restart senaryoları event'lerden reconstruct).
 function seedJobs(dir: string, jobs: BuildJob[]): void {
   fs.writeFileSync(path.join(dir, 'builds.json'), JSON.stringify(jobs.map((j) => j.toProps()), null, 2));
+  const eventsDir = path.join(dir, 'build-events');
+  fs.mkdirSync(eventsDir, { recursive: true });
+  for (const j of jobs) {
+    const evs = eventsForJob(j);
+    fs.writeFileSync(path.join(eventsDir, encodeURIComponent(j.id) + '.jsonl'), evs.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+  }
+}
+
+// Tohum job'ın status'üne denk event chain (fold ile birebir reconstruct edilebilir).
+function eventsForJob(j: BuildJob): Array<Record<string, unknown>> {
+  const p = j.toProps();
+  const ev = (version: number, type: string, payload: Record<string, unknown>) =>
+    ({ streamId: p.id, version, ts: p.createdAt, type, payload });
+  const evs: Array<Record<string, unknown>> = [ev(1, 'BuildQueued', { createdAt: p.createdAt })];
+  if (p.status === 'queued') return evs;
+  if (p.error === 'dispatch-lost') { evs.push(ev(2, 'DispatchLost', { finishedAt: p.finishedAt })); return evs; }
+  evs.push(ev(2, 'BuildStarted', { startedAt: p.startedAt }));
+  if (p.status === 'running') return evs;
+  if (p.status === 'succeeded') evs.push(ev(3, 'BuildSucceeded', { finishedAt: p.finishedAt, exitCode: p.exitCode, logTail: p.logTail }));
+  else evs.push(ev(3, 'BuildFailed', { finishedAt: p.finishedAt, error: p.error, exitCode: p.exitCode, logTail: p.logTail }));
+  return evs;
 }
 
 async function poll(url: string, id: string): Promise<Record<string, unknown>> {
