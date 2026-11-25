@@ -29,6 +29,7 @@ const orig = {
   rateLimit: process.env.ASTROPRESS_RATE_LIMIT,
   allowAnyHost: process.env.ASTROPRESS_ALLOW_ANY_HOST,
   redisUrl: process.env.REDIS_URL,
+  auth: process.env.ASTROPRESS_AUTH,
 };
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
@@ -40,6 +41,7 @@ afterEach(async () => {
     ASTROPRESS_RATE_LIMIT: orig.rateLimit,
     ASTROPRESS_ALLOW_ANY_HOST: orig.allowAnyHost,
     REDIS_URL: orig.redisUrl,
+    ASTROPRESS_AUTH: orig.auth,
   };
   for (const [key, val] of Object.entries(restore)) {
     if (val === undefined) delete process.env[key];
@@ -48,7 +50,7 @@ afterEach(async () => {
 });
 
 // main.ts production parser config'ini replike eder (spec §8): AppModule-boot testleri main.ts'yi görmez.
-async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number; runner?: FakeBuildRunner } = {}): Promise<string> {
+async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number; runner?: FakeBuildRunner; auth?: 'header' | 'token'; tokens?: Record<string, string> } = {}): Promise<string> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-perimeter-'));
   process.env.ASTROPRESS_STATE = dir;
   // Sites file adapter ASTROPRESS_SITES_FILE ile izole edilir (sites.http.spec.ts emsali);
@@ -57,6 +59,14 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   const agentsFile = path.join(dir, 'agents.json');
   fs.writeFileSync(agentsFile, JSON.stringify(opts.agents ?? DEFAULT_AGENTS), 'utf8');
   process.env.ASTROPRESS_AGENTS_FILE = agentsFile;
+  if (opts.auth) process.env.ASTROPRESS_AUTH = opts.auth;
+  else delete process.env.ASTROPRESS_AUTH;
+  if (opts.tokens) {
+    const { hashToken } = await import('../../src/security/application/token-store');
+    const map: Record<string, string> = {};
+    for (const [agentId, plaintext] of Object.entries(opts.tokens)) map[agentId] = hashToken(plaintext);
+    fs.writeFileSync(path.join(dir, 'agent-tokens.json'), JSON.stringify(map), 'utf8');
+  }
   if (opts.rateLimit !== undefined) process.env.ASTROPRESS_RATE_LIMIT = String(opts.rateLimit);
   else delete process.env.ASTROPRESS_RATE_LIMIT;
   // Perimeter testleri guard davranışını doğrular (storage-agnostic): her boot taze in-memory
@@ -76,9 +86,10 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   return `http://127.0.0.1:${port}`;
 }
 
-async function send(url: string, method: string, body?: unknown, agent?: string): Promise<Response> {
+async function send(url: string, method: string, body?: unknown, agent?: string, bearer?: string): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (agent) headers['X-Astropress-Agent'] = agent;
+  if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
   return fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
@@ -216,4 +227,57 @@ test('rate-limit: per-agent isolation (A throttled, B passes)', async () => {
   await send(`${url}/builds`, 'POST', {}, 'content-studio');
   assert.equal((await send(`${url}/builds`, 'POST', {}, 'content-studio')).status, 429);
   assert.equal((await send(`${url}/builds`, 'POST', {}, 'commerce-bot')).status, 201);
+});
+
+// --- TOKEN MODE (Faz-2+) ---
+const TOKENS = { 'content-studio': 'astro_cs_token', reader: 'astro_reader_token', 'commerce-bot': 'astro_cb_token' };
+
+test('token mode: valid bearer content-studio POST sites → 201', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'POST', validSite, undefined, 'astro_cs_token');
+  assert.equal(res.status, 201);
+});
+
+test('token mode: reader bearer POST sites → 403 (RBAC via resolved agent)', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'POST', validSite, undefined, 'astro_reader_token');
+  assert.equal(res.status, 403);
+});
+
+test('token mode: missing bearer → 401 (fallback YOK)', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'GET');
+  assert.equal(res.status, 401);
+});
+
+test('token mode: invalid bearer → 401', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'GET', undefined, undefined, 'astro_wrong');
+  assert.equal(res.status, 401);
+});
+
+test('token mode: X-Astropress-Agent ignored (header var, bearer yok → 401)', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'GET', undefined, 'content-studio');
+  assert.equal(res.status, 401);
+});
+
+test('token mode: GET requires bearer (valid → 200)', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS });
+  const res = await send(`${url}/sites`, 'GET', undefined, undefined, 'astro_reader_token');
+  assert.equal(res.status, 200);
+});
+
+test('token mode: per-agent rate-limit (bearer)', async () => {
+  const url = await boot({ auth: 'token', tokens: TOKENS, rateLimit: 2 });
+  assert.equal((await send(`${url}/builds`, 'POST', {}, undefined, 'astro_cs_token')).status, 201);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, undefined, 'astro_cs_token')).status, 201);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, undefined, 'astro_cs_token')).status, 429);
+  assert.equal((await send(`${url}/builds`, 'POST', {}, undefined, 'astro_cb_token')).status, 201);
+});
+
+test('token mode: empty store → boot-safe, all 401', async () => {
+  const url = await boot({ auth: 'token' });
+  const res = await send(`${url}/sites`, 'GET', undefined, undefined, 'astro_any');
+  assert.equal(res.status, 401);
 });
