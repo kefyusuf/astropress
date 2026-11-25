@@ -28,7 +28,7 @@ export class FileTokenStore implements TokenStore {
     return JSON.parse(fs.readFileSync(this.file, 'utf8'));
   }
 
-  findAgentByHash(hash: string): string | null {
+  async findAgentByHash(hash: string): Promise<string | null> {
     const registry = this.read();
     const presented = Buffer.from(hash, 'hex');
     for (const [agentId, stored] of Object.entries(registry)) {
@@ -39,7 +39,7 @@ export class FileTokenStore implements TokenStore {
     return null;
   }
 
-  setHash(agentId: string, hash: string): void {
+  async setHash(agentId: string, hash: string): Promise<void> {
     const registry = this.read();
     registry[agentId] = hash;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });

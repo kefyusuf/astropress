@@ -23,45 +23,51 @@ test('hashToken: deterministic sha256 hex, 64 char', () => {
   assert.notEqual(h, hashToken('astro_xyz'));
 });
 
-test('setHash + findAgentByHash roundtrip → agentId', () => {
+test('port async: findAgentByHash/setHash Promise döner', () => {
   const { store } = setup();
-  store.setHash('content-studio', hashToken('astro_secret'));
-  assert.equal(store.findAgentByHash(hashToken('astro_secret')), 'content-studio');
+  assert.ok(store.setHash('reader', hashToken('astro_p')) instanceof Promise);
+  assert.ok(store.findAgentByHash(hashToken('astro_p')) instanceof Promise);
 });
 
-test('findAgentByHash unknown → null', () => {
+test('setHash + findAgentByHash roundtrip → agentId', async () => {
   const { store } = setup();
-  store.setHash('content-studio', hashToken('astro_secret'));
-  assert.equal(store.findAgentByHash(hashToken('astro_wrong')), null);
+  await store.setHash('content-studio', hashToken('astro_secret'));
+  assert.equal(await store.findAgentByHash(hashToken('astro_secret')), 'content-studio');
 });
 
-test('missing file → findAgentByHash null; setHash creates file', () => {
+test('findAgentByHash unknown → null', async () => {
+  const { store } = setup();
+  await store.setHash('content-studio', hashToken('astro_secret'));
+  assert.equal(await store.findAgentByHash(hashToken('astro_wrong')), null);
+});
+
+test('missing file → findAgentByHash null; setHash creates file', async () => {
   const { store, file } = setup();
-  assert.equal(store.findAgentByHash(hashToken('astro_x')), null);
+  assert.equal(await store.findAgentByHash(hashToken('astro_x')), null);
   assert.ok(!fs.existsSync(file));
-  store.setHash('reader', hashToken('astro_x'));
+  await store.setHash('reader', hashToken('astro_x'));
   assert.ok(fs.existsSync(file));
-  assert.equal(store.findAgentByHash(hashToken('astro_x')), 'reader');
+  assert.equal(await store.findAgentByHash(hashToken('astro_x')), 'reader');
 });
 
-test('rotation: setHash same agent twice → latest wins, old null', () => {
+test('rotation: setHash same agent twice → latest wins, old null', async () => {
   const { store } = setup();
-  store.setHash('reader', hashToken('astro_old'));
-  store.setHash('reader', hashToken('astro_new'));
-  assert.equal(store.findAgentByHash(hashToken('astro_new')), 'reader');
-  assert.equal(store.findAgentByHash(hashToken('astro_old')), null);
+  await store.setHash('reader', hashToken('astro_old'));
+  await store.setHash('reader', hashToken('astro_new'));
+  assert.equal(await store.findAgentByHash(hashToken('astro_new')), 'reader');
+  assert.equal(await store.findAgentByHash(hashToken('astro_old')), null);
 });
 
-test('timing-safe: equal-length different hash → null (throw YOK)', () => {
+test('timing-safe: equal-length different hash → null (throw YOK)', async () => {
   const { store } = setup();
-  store.setHash('reader', hashToken('astro_a'));
-  assert.equal(store.findAgentByHash(hashToken('astro_b')), null);
+  await store.setHash('reader', hashToken('astro_a'));
+  assert.equal(await store.findAgentByHash(hashToken('astro_b')), null);
 });
 
-test('multiple agents: distinct hashes resolve correctly', () => {
+test('multiple agents: distinct hashes resolve correctly', async () => {
   const { store } = setup();
-  store.setHash('reader', hashToken('astro_r'));
-  store.setHash('operator', hashToken('astro_o'));
-  assert.equal(store.findAgentByHash(hashToken('astro_r')), 'reader');
-  assert.equal(store.findAgentByHash(hashToken('astro_o')), 'operator');
+  await store.setHash('reader', hashToken('astro_r'));
+  await store.setHash('operator', hashToken('astro_o'));
+  assert.equal(await store.findAgentByHash(hashToken('astro_r')), 'reader');
+  assert.equal(await store.findAgentByHash(hashToken('astro_o')), 'operator');
 });

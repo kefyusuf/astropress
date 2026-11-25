@@ -10,7 +10,7 @@ export class MintToken {
   async execute(agentId: string): Promise<string> {
     await this.registry.getAgent(agentId); // validate (unknown → UnknownAgentError)
     const token = `astro_${randomBytes(32).toString('base64url')}`;
-    this.store.setHash(agentId, hashToken(token));
+    await this.store.setHash(agentId, hashToken(token));
     return token;
   }
 }

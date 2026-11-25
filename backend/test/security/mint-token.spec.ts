@@ -30,7 +30,7 @@ test('execute valid agent → astro_ token, hash stored', async () => {
   const { mint, store } = setup();
   const token = await mint.execute('content-studio');
   assert.match(token, /^astro_[A-Za-z0-9_-]{43}$/);
-  assert.equal(store.findAgentByHash(hashToken(token)), 'content-studio');
+  assert.equal(await store.findAgentByHash(hashToken(token)), 'content-studio');
 });
 
 test('execute unknown agent → UnknownAgentError', async () => {
@@ -43,8 +43,8 @@ test('rotation: second execute → new token valid, old token null', async () =>
   const first = await mint.execute('reader');
   const second = await mint.execute('reader');
   assert.notEqual(first, second);
-  assert.equal(store.findAgentByHash(hashToken(second)), 'reader');
-  assert.equal(store.findAgentByHash(hashToken(first)), null);
+  assert.equal(await store.findAgentByHash(hashToken(second)), 'reader');
+  assert.equal(await store.findAgentByHash(hashToken(first)), null);
 });
 
 test('tokens unique across agents', async () => {
@@ -52,6 +52,6 @@ test('tokens unique across agents', async () => {
   const a = await mint.execute('reader');
   const b = await mint.execute('content-studio');
   assert.notEqual(a, b);
-  assert.equal(store.findAgentByHash(hashToken(a)), 'reader');
-  assert.equal(store.findAgentByHash(hashToken(b)), 'content-studio');
+  assert.equal(await store.findAgentByHash(hashToken(a)), 'reader');
+  assert.equal(await store.findAgentByHash(hashToken(b)), 'content-studio');
 });

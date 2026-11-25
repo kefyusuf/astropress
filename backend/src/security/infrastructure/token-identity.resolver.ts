@@ -16,7 +16,7 @@ export class TokenIdentityResolver implements IdentityResolver {
     const value = typeof header === 'string' ? header : '';
     const match = /^Bearer (.+)$/i.exec(value);
     if (!match) throw new UnauthorizedException('Geçersiz veya eksik bearer token');
-    const agentId = this.store.findAgentByHash(hashToken(match[1].trim()));
+    const agentId = await this.store.findAgentByHash(hashToken(match[1].trim()));
     if (!agentId) throw new UnauthorizedException('Bilinmeyen token');
     try {
       return await this.registry.getAgent(agentId);
