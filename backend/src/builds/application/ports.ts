@@ -5,7 +5,7 @@ export const BUILD_JOB_REPOSITORY = Symbol('BUILD_JOB_REPOSITORY');
 export const BUILD_RUNNER = Symbol('BUILD_RUNNER');
 
 export interface BuildRunner {
-  run(): Promise<BuildResult>;
+  run(jobId: string): Promise<BuildResult>;
 }
 
 // Single-flight varsayımı (M3): file mode BuildWorker.drain'in race-freedom'ı file adapter'ın SENKRON
@@ -36,3 +36,6 @@ export interface EventStore {
   readStream(streamId: string): Promise<BuildEvent[]>;
   readAll(): Promise<BuildEvent[]>;
 }
+
+// Eşzamanlı build sayısı (file N-pool + BullMQ concurrency). default 1 → serial parity.
+export const BUILD_CONCURRENCY = Symbol('BUILD_CONCURRENCY');

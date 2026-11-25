@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nest
 import { Worker, Job, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { BuildJob } from '../../domain/build-job';
-import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner } from '../../application/ports';
+import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_CONCURRENCY, BuildJobRepository, BuildRunner } from '../../application/ports';
 import { BUILD_RETENTION } from '../../application/build-worker';
 import { BUILD_QUEUE_NAME, BUILD_QUEUE } from './build-queue';
 import { REDIS_URL, createRedisConnection } from '../../../infrastructure/redis-connection';
@@ -19,6 +19,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(BUILD_RETENTION) private readonly retention: number,
     @Inject(REDIS_URL) private readonly url: string,
     @Inject(BUILD_QUEUE) private readonly queue: Queue,
+    @Inject(BUILD_CONCURRENCY) private readonly concurrency: number,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -27,7 +28,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
       this.connection = createRedisConnection(this.url);
       this.worker = new Worker(BUILD_QUEUE_NAME, (job) => this.process(job), {
         connection: this.connection,
-        concurrency: 1, // serial → dist/ yarışı yok (file mode parity)
+        concurrency: this.concurrency, // N (Redis job-lock native claim; N=1 serial parity)
         maxStalledCount: 1,
         stalledInterval: 30000,
       });
@@ -87,7 +88,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     // queued → run
     const running = build.markRunning(new Date().toISOString());
     await this.repo.save(running);
-    const result = await this.runner.run();
+    const result = await this.runner.run(build.id);
     const done = new Date().toISOString();
     const finished = result.ok
       ? running.markSucceeded(result, done)
