@@ -24,10 +24,11 @@ const origBuilds = process.env.ASTROPRESS_BUILDS;
 const origRedis = process.env.REDIS_URL;
 const origQueueLimit = process.env.ASTROPRESS_BUILD_QUEUE_LIMIT;
 const origRetention = process.env.ASTROPRESS_BUILD_RETENTION;
+const origConcurrency = process.env.ASTROPRESS_BUILD_CONCURRENCY;
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
   if (cleanup) { await cleanup(); cleanup = null; }
-  for (const [k, v] of [['ASTROPRESS_STATE', origState], ['ASTROPRESS_BUILDS', origBuilds], ['REDIS_URL', origRedis], ['ASTROPRESS_BUILD_QUEUE_LIMIT', origQueueLimit], ['ASTROPRESS_BUILD_RETENTION', origRetention]] as const) {
+  for (const [k, v] of [['ASTROPRESS_STATE', origState], ['ASTROPRESS_BUILDS', origBuilds], ['REDIS_URL', origRedis], ['ASTROPRESS_BUILD_QUEUE_LIMIT', origQueueLimit], ['ASTROPRESS_BUILD_RETENTION', origRetention], ['ASTROPRESS_BUILD_CONCURRENCY', origConcurrency]] as const) {
     if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });
@@ -294,4 +295,26 @@ test('bullmq: Redis-down orphan reconcile boot-safe (skip, brick yok)', { skip }
   const { url } = await boot(new FakeBuildRunner(), 'redis://127.0.0.1:1', (dir) => seedJobs(dir, [BuildJob.newQueued('build-x', NOW)]));
   const res = await fetch(`${url}/builds/build-x`);
   assert.equal(res.status, 200);
+});
+
+// concurrency-N: BullMQ Worker concurrency N → N job eşzamanlı running (Redis native claim).
+test('bullmq: concurrency N=2 → 2 job eşzamanlı running (BlockingBuildRunner)', { skip }, async (t) => {
+  try { await pingRedis(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  await flushRedis();
+  process.env.ASTROPRESS_BUILD_CONCURRENCY = '2';
+  const runner = new BlockingBuildRunner();
+  const { url } = await boot(runner);
+  try {
+    const j1 = await (await fetch(`${url}/builds`, { method: 'POST' })).json();
+    const j2 = await (await fetch(`${url}/builds`, { method: 'POST' })).json();
+    for (let i = 0; i < 200; i++) {
+      const s1 = await (await fetch(`${url}/builds/${j1.id}`)).json();
+      const s2 = await (await fetch(`${url}/builds/${j2.id}`)).json();
+      if (s1.status === 'running' && s2.status === 'running') break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal((await (await fetch(`${url}/builds/${j1.id}`)).json()).status, 'running');
+    assert.equal((await (await fetch(`${url}/builds/${j2.id}`)).json()).status, 'running');
+    assert.equal(runner.calls, 2);
+  } finally { runner.unblock(); }
 });
