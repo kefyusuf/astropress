@@ -31,7 +31,13 @@ test('backend SIGTERM → graceful shutdown (enableShutdownHooks)', { skip }, as
       child.on('error', reject);
     });
     child.kill('SIGTERM');
-    const code = await new Promise((resolve) => child.on('exit', resolve));
+    // Timeout guard (spec §6): teardown hang regression'ında sonsuz bekleme yerine 10s'de reject →
+    // finally SIGKILL cleanup çalışır (CI job hang + orphan child yok). Child zaten exit ettiyse hemen resolve.
+    const code = await new Promise<number | null>((resolve, reject) => {
+      if (child.exitCode !== null) { resolve(child.exitCode); return; }
+      const timer = setTimeout(() => reject(new Error('shutdown exit timeout — teardown hang')), 10000);
+      child.on('exit', (c) => { clearTimeout(timer); resolve(c); });
+    });
     assert.equal(code, 0);
   } finally {
     if (child.exitCode === null) child.kill('SIGKILL');
