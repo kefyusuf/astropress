@@ -185,7 +185,7 @@ sequenceDiagram
 
 ## 5. Testing
 
-- **H1 bracket:** mevcut `redis-throttler.spec.ts` 9 test **DEĞİŞMEDEN** geçer (skip-gated Redis).
+- **H1 bracket:** mevcut `redis-throttler.spec.ts`'in 8 testi **DEĞİŞMEDEN** geçer (skip-gated Redis). NX concurrency testi seam uyarlaması: client-side `set` monkey-patch Lua'da çalışmaz (SET script içinde) → seam `eval`'e taşınır (ikinci EVAL 250ms gecikir); davranış assertion'ları **birebir aynı** (set-once, TTL reset yok). Bu uyarlama eski implementasyona karşı genuine-red üretir (seam ölür → TTL assertion fail).
 - **H1 yeni:** concurrent first-hit burst — `Promise.all` 20 `increment` (aynı key, limit 100 → block yok) → ardından tek `increment` → totalHits **tam 21** (Kayıp INCR yok), TTL > 0, tek window (atomiklik kanıtı).
 - **H2 unit:** `readiness-state.spec.ts` — set/snapshot, tek degraded → status degraded, boş map → ready, component map doğruluğu.
 - **H2 http (file, infra'sız):** `health.http.spec.ts` — healthz 200; readyz 200 + components; token mode'da bearer'sız healthz/readyz 200 (public), bearer'sız `GET /sites` hâlâ 401 (perimeter intact); HostMiddleware health'te aktif.
@@ -204,7 +204,7 @@ sequenceDiagram
 
 ## 7. Kabul kriterleri
 
-1. `RedisThrottlerStorage.increment` tek Lua EVAL; mevcut 9-test parity suite değişmeden yeşil.
+1. `RedisThrottlerStorage.increment` tek Lua EVAL; 8 parity testi değişmeden + NX testi seam-uyarlamasıyla (assertion'lar aynı) yeşil.
 2. Concurrent burst testi: tam sayım + tek TTL (atomiklik kanıtı).
 3. `GET /healthz` her boot modunda 200; `GET /readyz` ready boot'ta 200, degrade boot'ta 503 + component body.
 4. Health route'ları token mode'da bearer'sız 200; diğer route'ların perimeter'ı değişmez.

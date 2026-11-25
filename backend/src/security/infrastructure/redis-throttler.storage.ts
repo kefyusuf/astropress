@@ -3,12 +3,33 @@ import { OnApplicationShutdown } from '@nestjs/common';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 // v6.8.0: ThrottlerStorageRecord kök index'ten re-export edilmiyor (TS2724); gerçek tip
 // tanımlandığı modülden import edilir. Shape: { totalHits, timeToExpire, isBlocked, timeToBlockExpire }.
-// Dönüş değerleri SANİYE (in-memory parity: throttler.service.js:79,82 Math.ceil(ms/1000));
-// guard raw değeri doğrudan Retry-After / X-RateLimit-Reset header'ına yazar (dönüşüm yok).
 import type { ThrottlerStorageRecord } from '@nestjs/throttler/dist/throttler-storage-record.interface';
 
-// Custom Redis storage (E): fixed-window INCR+PTTL, in-memory default ile parity.
-// Guard/config değişmez (D1 seam); sadece storage provider swap.
+// H1: fixed-window increment+expire tek atomik Lua script (rate limiter sektör normu).
+// Redis single-threaded script execution → INCR↔PEXPIRE crash penceresi ve concurrent block yarışı
+// kökten kapanır. I1 (freeze-hits, set-once NX) parity script içinde; I2 (saniye) dönüşümü TS'te.
+// Dönüş: [totalHits, pttlMs, isBlocked(0|1), blockMs] — ms fallback'leri (>0 ? pttl : ttl) eski TS parity birebir.
+const LUA_INCREMENT = `
+local blockTtl = redis.call('PTTL', KEYS[2])
+if blockTtl > 0 then
+  local hits = redis.call('GET', KEYS[1])
+  local pttl = redis.call('PTTL', KEYS[1])
+  return { tonumber(hits) or 0, pttl > 0 and pttl or tonumber(ARGV[1]), 1, blockTtl }
+end
+local total = redis.call('INCR', KEYS[1])
+if total == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+local pttl = redis.call('PTTL', KEYS[1])
+if pttl == -1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1]); pttl = redis.call('PTTL', KEYS[1])
+end
+if total > tonumber(ARGV[2]) then
+  redis.call('SET', KEYS[2], '1', 'PX', ARGV[3], 'NX')
+  return { total, pttl > 0 and pttl or tonumber(ARGV[1]), 1, tonumber(ARGV[3]) }
+end
+return { total, pttl > 0 and pttl or tonumber(ARGV[1]), 0, 0 }
+`;
+
+// Custom Redis storage (E + H1): guard/config değişmez (D1 seam); sadece storage provider swap.
 export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShutdown {
   constructor(private readonly redis: IORedis) {}
 
@@ -16,35 +37,16 @@ export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShu
     await this.waitReady();
     const redisKey = `throttler:${throttlerName}:${key}`;
     const blockKey = `${redisKey}:block`;
-    // I1 parity: ÖNCE block durumu okunur. In-memory (throttler.service.js:135-142):
-    // blocked iken fireHitCount ÇAĞRILMAZ (hits donar) ve block BİR KEZ kurulur.
-    // Guard her istekte increment çağırır (throttler.guard.js:129) → koşulsuz INCR + re-SET
-    // sliding block / kalıcı lockout üretirdi; blocked retry'lar burada sayacı ve block TTL'i değiştirmez.
-    const blockTtl = await this.redis.pttl(blockKey);
-    if (blockTtl > 0) {
-      // Donuk sayı GET ile okunur (INCR yok); hit key expire olmuşsa 0 (in-memory pruneExpiredHits emsali).
-      const frozenHits = await this.redis.get(redisKey);
-      const hitPttl = await this.redis.pttl(redisKey);
-      const timeToExpire = Math.ceil((hitPttl > 0 ? hitPttl : ttl) / 1000);
-      return { totalHits: frozenHits !== null ? Number(frozenHits) : 0, timeToExpire, isBlocked: true, timeToBlockExpire: Math.ceil(blockTtl / 1000) };
-    }
-    const totalHits = await this.redis.incr(redisKey);
-    if (totalHits === 1) await this.redis.pexpire(redisKey, ttl);
-    const pttl = await this.redis.pttl(redisKey);
-    // T3-d: crash INCR ile PEXPIRE arasında kaldıysa TTL'siz orphan (pttl -1) → heal (window bounded kalır).
-    if (pttl === -1) await this.redis.pexpire(redisKey, ttl);
+    const [totalHits, pttlMs, blocked, blockMs] = (await this.redis.eval(
+      LUA_INCREMENT, 2, redisKey, blockKey, ttl, limit, blockDuration,
+    )) as [number, number, number, number];
     // I2 parity: saniye (Math.ceil(ms/1000)) — in-memory service.js:79,82; guard header'a raw yazar.
-    const timeToExpire = Math.ceil((pttl > 0 ? pttl : ttl) / 1000);
-    let isBlocked = false;
-    let timeToBlockExpire = 0;
-    if (totalHits > limit) {
-      // Block yalnızca blocked DEĞİLKEN kurulur (yukarıdaki early-return) → set-once, non-sliding.
-      // T3-a: NX — iki eşzamanlı first-over-limit isteğinde yalnız kazanan SET block kurar (TTL uzamaz).
-      isBlocked = true;
-      timeToBlockExpire = Math.ceil(blockDuration / 1000);
-      await this.redis.set(blockKey, '1', 'PX', blockDuration, 'NX');
-    }
-    return { totalHits, timeToExpire, isBlocked, timeToBlockExpire };
+    return {
+      totalHits,
+      timeToExpire: Math.ceil(pttlMs / 1000),
+      isBlocked: blocked === 1,
+      timeToBlockExpire: Math.ceil(blockMs / 1000),
+    };
   }
 
   // createRedisConnection enableOfflineQueue:false → 'ready' ÖNCESİ komutlar anında reject eder

@@ -126,22 +126,22 @@ test('increment: window expire + block aktif → block key\'den blocked okunur',
   } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
 });
 
-// T3-a: atomic set-once (NX). İki EŞZAMANLI first-over-limit isteği block'i iki kez kuramaz;
-// yalnız kazanan SET block TTL'ini belirler. Deterministik yarış seam'i: ikinci SET komutu 250ms
-// geciktirilir → NX yoksa geç SET TTL'i blockDuration'a RESET eder (sliding block); NX ile no-op.
+// T3-a: atomic set-once (NX). Seam EVAL üzerinde (H1): Lua'da SET script içinde çalışır,
+// client-side set monkey-patch ölüdür. İkinci EVAL 250ms gecikir → block ilk script'te kurulmuş
+// olur; ikinci script frozen-branch'ten döner, block TTL RESET edilmez (NX set-once script içinde).
 test('increment: concurrent over-limit → block set-once (NX, ikinci SET TTL resetlemez)', { skip }, async (t) => {
   let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
   try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
   try {
     for (let i = 0; i < 3; i++) await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
     const blockKey = 'throttler:default:agent-nx:block';
-    const origSet: (...args: any[]) => Promise<unknown> = ctx.redis.set.bind(ctx.redis);
-    let setCalls = 0;
-    // Test seam: over-limit SET'lerini sıralı hale getir (ikincisi 250ms geç) — yarış penceresi ölçülebilir.
-    (ctx.redis as any).set = (...args: any[]) => {
-      setCalls++;
-      if (setCalls === 2) return new Promise((r) => setTimeout(r, 250)).then(() => origSet(...args));
-      return origSet(...args);
+    const origEval: (...args: any[]) => Promise<unknown> = ctx.redis.eval.bind(ctx.redis);
+    let evalCalls = 0;
+    // Test seam: over-limit EVAL'lerini sıralı hale getir (ikincisi 250ms geç) — yarış penceresi ölçülebilir.
+    (ctx.redis as any).eval = (...args: any[]) => {
+      evalCalls++;
+      if (evalCalls === 2) return new Promise((r) => setTimeout(r, 250)).then(() => origEval(...args));
+      return origEval(...args);
     };
     const [r1, r2] = await Promise.all([
       ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default'),
@@ -169,5 +169,21 @@ test('increment: TTL-less orphan hit key → pexpire ile heal (crash between INC
     const healed = await ctx.redis.pttl(hitKey);
     assert.ok(healed > 0 && healed <= 60000, `orphan key TTL kazanmalı (heal): ${healed}`);
     assert.ok(r.timeToExpire > 0 && r.timeToExpire <= 60, 'timeToExpire saniye parity korunmalı');
+  } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
+});
+
+// H1 atomiklik kanıtı: 20 eşzamanlı first-hit INCR kaybı olmadan sayılır (tek script = tek atomik adım),
+// window tek TTL taşır. Burst sonrası tek increment tam 21 döner.
+test('increment: concurrent first-hit burst → atomik sayım (kayıp INCR yok, tek TTL)', { skip }, async (t) => {
+  let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
+  try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
+  try {
+    const results = await Promise.all(Array.from({ length: 20 }, () =>
+      ctx.storage.increment('agent-burst', 60000, 100, 60000, 'default')));
+    assert.ok(results.every((r) => r.isBlocked === false), 'limit 100 → burst blocked olmamalı');
+    const after = await ctx.storage.increment('agent-burst', 60000, 100, 60000, 'default');
+    assert.equal(after.totalHits, 21, '20 concurrent + 1 = tam 21 (kayıp INCR yok)');
+    const pttl = await ctx.redis.pttl('throttler:default:agent-burst');
+    assert.ok(pttl > 0 && pttl <= 60000, `tek window TTL: ${pttl}`);
   } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
 });
