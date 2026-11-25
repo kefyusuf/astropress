@@ -3,6 +3,9 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AGENTS_FILE, FileAgentRegistry, defaultAgentsFile } from './infrastructure/file-agent-registry';
 import { AGENT_REGISTRY, AgentRegistry } from './application/agent-registry';
+import { PostgresAgentRegistry } from './infrastructure/postgres-agent-registry';
+import { PostgresTokenStore } from './infrastructure/postgres-token-store';
+import { DATABASE_URL } from '../sites/infrastructure/postgres-site.repository';
 import { IDENTITY_RESOLVER } from './application/identity-resolver';
 import { TOKEN_STORE, TokenStore } from './application/token-store';
 import { TOKEN_STORE_FILE, FileTokenStore, defaultTokenStoreFile } from './infrastructure/file-token-store';
@@ -31,9 +34,32 @@ import { createRedisConnection } from '../infrastructure/redis-connection';
   ],
   providers: [
     { provide: AGENTS_FILE, useFactory: () => defaultAgentsFile() },
-    { provide: AGENT_REGISTRY, useClass: FileAgentRegistry },
     { provide: TOKEN_STORE_FILE, useFactory: () => defaultTokenStoreFile() },
-    { provide: TOKEN_STORE, useClass: FileTokenStore },
+    { provide: DATABASE_URL, useFactory: () => process.env.DATABASE_URL || '' },
+    {
+      provide: AGENT_REGISTRY,
+      useFactory: async (agentsFile: string, dbUrl: string): Promise<AgentRegistry> => {
+        if (process.env.ASTROPRESS_STORAGE === 'postgres') {
+          const registry = new PostgresAgentRegistry(dbUrl, agentsFile);
+          await registry.init();
+          return registry;
+        }
+        return new FileAgentRegistry(agentsFile);
+      },
+      inject: [AGENTS_FILE, DATABASE_URL],
+    },
+    {
+      provide: TOKEN_STORE,
+      useFactory: async (file: string, dbUrl: string): Promise<TokenStore> => {
+        if (process.env.ASTROPRESS_STORAGE === 'postgres') {
+          const store = new PostgresTokenStore(dbUrl);
+          await store.init();
+          return store;
+        }
+        return new FileTokenStore(file);
+      },
+      inject: [TOKEN_STORE_FILE, DATABASE_URL],
+    },
     {
       provide: IDENTITY_RESOLVER,
       useFactory: (registry: AgentRegistry, store: TokenStore) =>
