@@ -12,7 +12,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        # astro 7 Node >=22.23.4 ister → node 20 desteklenmiyor.
+        node: [22, 24]
     services:
       postgres:
         image: postgres:16-alpine

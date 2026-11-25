@@ -20,7 +20,7 @@
     "i18n"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.23.4"
   },
   "scripts": {
     "dev": "astro dev",
