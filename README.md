@@ -185,13 +185,21 @@ ASTROPRESS_STORAGE=postgres DATABASE_URL=postgres://astropress:astropress@localh
 
 ### Builds engine (opt-in durable)
 
-`ASTROPRESS_BUILDS=file` (default, in-process serial worker) | `bullmq` (Redis durable queue).
+`ASTROPRESS_BUILDS=file` (default, in-process worker) | `bullmq` (Redis durable queue).
 `ASTROPRESS_STORAGE`'tan orthogonal — builds state her iki mode'da file read-model.
 
+**Concurrency-N:** `ASTROPRESS_BUILD_CONCURRENCY` (default `1` → serial parity) eşzamanlı build sayısını
+belirler; her iki engine'de geçerli (`file` N-pool + claimed Set, `bullmq` Worker `concurrency:N` Redis
+native job-lock). N>1 yarışmaz çünkü her build **per-build izole root**'ta koşar: `BuildWorkspace`
+`src/public/node_modules` junction/symlink + config copy ile izole root kurar, `dist/` ve `.astro/` cache
+build'e özel gerçek dizinlerdir (astro `--root` + `--outDir`). İş bitince workspace cleanup (ephemeral);
+boot'ta `cleanupAll` leftover'ları siler. Farm dizini: `ASTROPRESS_STATE/build-workspaces` (yoksa repo
+`.astropress/build-workspaces`). Real `node_modules`/`src` korunur (rmSync junction follow etmez).
+
 - `file`: queued job'lar gitignore'lu working-tree dosyası `.astropress/builds.json`'da (repo read-model;
-  git-committed durability DEĞİL — process restart'ta dosya durur, kick ile resume (I2)); concurrency 1, no-retry.
+  git-committed durability DEĞİL — process restart'ta dosya durur, kick ile resume (I2)); N-pool, no-retry.
 - `bullmq`: `REDIS_URL` (default `redis://localhost:6379`) gerekir; queued job'lar Redis'te survive
-  (durability), BullMQ Worker concurrency 1 / attempts 1 (parity), stalled→failed interrupted.
+  (durability), BullMQ Worker `concurrency:N` / attempts 1 (parity), stalled→failed interrupted.
   HTTP contract her iki mode'da identical (POST 201 · GET 200/404 · list DESC · 429 queue-full).
 - **Redis down (opt-in tradeoff):** `ASTROPRESS_BUILDS=bullmq` + Redis down iken app yine boot eder
   (boot-safe connection), GET/read çalışır (file read-model); mutation'lar fail-closed döner:
@@ -429,7 +437,8 @@ MCP köprüsü üzerinden yapılır.
    (dört adapter aynı contract'tan geçer). Postgres (P2.2b) ✔ — pg.Pool, Docker dev servisi, skip-if-unavailable test.
    **Build worker (P2.4) ✔** — backend `builds` slice: async job kuyruğu + serial worker (file-backed `.astropress/builds.json`),
    `POST/GET /builds`, boot recovery. ~~BullMQ+Redis durable queue (Group E)~~ ✔ — opt-in durable engine + throttler Redis storage
-   (`ASTROPRESS_BUILDS=bullmq` + `REDIS_URL`; Docker `redis:7-alpine` + CI redis service). Multi-instance concurrency N future seam (mevcut parity concurrency 1).
+   (`ASTROPRESS_BUILDS=bullmq` + `REDIS_URL`; Docker `redis:7-alpine` + CI redis service). **Concurrency-N ✔** —
+   `ASTROPRESS_BUILD_CONCURRENCY` (default 1) ile N eşzamanlı build, per-build izole root (junction farm); multi-instance future seam.
    Strangler: MCP `ops.mjs` şimdilik kalır; BullMQ+Redis opt-in olarak geldi, Faz 3 EventStore.
 8. **Pazaryeri bağlaçları** (Trendyol / Hepsiburada): gerçek API kimliği gerektirir; adaptör planlandı,
    canlı anahtarlarla doğrulanacak — simülasyon değil.
