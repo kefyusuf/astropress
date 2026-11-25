@@ -18,3 +18,10 @@ export class BuildQueueFullError extends Error {
     this.name = 'BuildQueueFullError';
   }
 }
+
+export class ConcurrencyError extends Error {
+  constructor(streamId: string, expected: number, actual?: number) {
+    super(`Event stream version conflict: ${streamId} expected ${expected}` + (actual !== undefined ? `, actual ${actual}` : ''));
+    this.name = 'ConcurrencyError';
+  }
+}
