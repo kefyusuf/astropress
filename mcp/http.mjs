@@ -4,10 +4,13 @@ import path from 'node:path';
 import * as ops from './ops.mjs';
 import { ROOT } from './store.mjs';
 import { HUMAN, listAgents } from './auth.mjs';
+import { site } from './config.mjs';
 
 const HP = HUMAN.perms;
 
 const PORT = Number(process.env.PORT || 4322);
+// Container'da host'tan erişim için 0.0.0.0 gerekir; lokalde varsayılan loopback.
+const HOST = process.env.HOST || '127.0.0.1';
 const ADMIN = path.join(ROOT, 'admin', 'index.html');
 const DIST = path.join(ROOT, 'dist');
 
@@ -88,6 +91,7 @@ async function api(req, res, url) {
   if (p === '/api/build' && method === 'POST') return json(res, 200, ops.build('human'));
   if (p === '/api/audit' && method === 'GET') return json(res, 200, ops.audit({ limit: Number(q.get('limit')) || 50 }));
   if (p === '/api/agents' && method === 'GET') return json(res, 200, listAgents());
+  if (p === '/api/config' && method === 'GET') return json(res, 200, site);
   return json(res, 404, { error: 'Bilinmeyen API rotası: ' + method + ' ' + p });
 }
 
@@ -103,6 +107,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log('AstroPress admin → http://127.0.0.1:' + PORT + '/  (site önizleme: /site/)');
 });

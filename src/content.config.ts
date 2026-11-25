@@ -1,5 +1,6 @@
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
+import { siteConfig } from './lib/site.config';
 
 const status = z.enum(['draft', 'review', 'published']).default('draft');
 
@@ -11,7 +12,7 @@ const base = {
   date: z.coerce.date(),
   seoTitle: z.string().default(''),
   seoDesc: z.string().default(''),
-  lang: z.enum(['tr', 'en']).default('tr'),
+  lang: z.enum(siteConfig.locales as [string, ...string[]]).default(siteConfig.defaultLocale),
   translationOf: z.string().default(''),
 };
 

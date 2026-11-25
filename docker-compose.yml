@@ -1,0 +1,90 @@
+# Geliştirme yığını: web (astro dev) + admin (http köprü + UI) + backend (NestJS HTTP API) + mcp-http (MCP Streamable HTTP) + postgres (dev DB) + redis (opt-in bullmq engine + throttler storage).
+# Config tek kaynak: sites.json tüketicilere (web/admin/mcp-http) read-only, tek yazar backend.
+# State (.astropress: audit/tasks) admin + mcp-http'ye read-write; config ile karışmaz.
+services:
+  web:
+    build: .
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "4321:4321"
+    environment:
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+  admin:
+    build: .
+    command: node mcp/http.mjs
+    ports:
+      - "4322:4322"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4322"
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+      - ./.astropress:/app/.astropress
+  backend:
+    build: .
+    command: sh -c "npm --prefix backend run build && npm --prefix backend run start"
+    ports:
+      - "3000:3000"
+    environment:
+      ASTROPRESS_STORAGE: file
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+      PORT: "3000"
+      DATABASE_URL: postgres://astropress:astropress@postgres:5432/astropress
+      REDIS_URL: redis://redis:6379
+      ASTROPRESS_BUILDS: ${ASTROPRESS_BUILDS:-file}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+  mcp-http:
+    build: .
+    command: node mcp/http-server.mjs
+    ports:
+      - "4323:4323"
+    environment:
+      HOST: 0.0.0.0
+      MCP_PORT: "4323"
+      MCP_ALLOW_ANY_HOST: "1"
+      ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/backend/node_modules
+      - ./sites.json:/app/sites.json:ro
+      - ./.astropress:/app/.astropress
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: astropress
+      POSTGRES_PASSWORD: astropress   # dev-only, production değil
+      POSTGRES_DB: astropress
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astropress"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:

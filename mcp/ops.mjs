@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import * as store from './store.mjs';
+import { normalizeLang } from './config.mjs';
 
 // Guardrail'ler tek kaynak: create/update status'u asla değiştirmez;
 // yayın yalnız requestPublish -> approve (insan) zinciriyle olur.
@@ -30,7 +31,7 @@ export function create({ collection, title, excerpt, body, author, lang, transla
     excerpt: excerpt || '',
     date: new Date().toISOString().slice(0, 10),
     seoTitle: '', seoDesc: '',
-    lang: lang === 'en' ? 'en' : 'tr',
+    lang: normalizeLang(lang),
     translationOf: translationOf || '',
   };
   if (collection === 'products') { data.price = 0; data.stock = 0; }
@@ -48,7 +49,7 @@ export function update({ collection, slug, title, excerpt, body, seoTitle, seoDe
   if (excerpt !== undefined) data.excerpt = excerpt;
   if (seoTitle !== undefined) data.seoTitle = seoTitle;
   if (seoDesc !== undefined) data.seoDesc = seoDesc;
-  if (lang !== undefined) data.lang = lang === 'en' ? 'en' : 'tr';
+  if (lang !== undefined) data.lang = normalizeLang(lang);
   if (translationOf !== undefined) data.translationOf = translationOf;
   if (collection === 'products' && wantsCommerce) {
     if (price !== undefined) data.price = Number(price);

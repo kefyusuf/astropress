@@ -140,12 +140,12 @@
   const main = $('#main');
   const COLS = { blog: 'Yazı', products: 'Ürün', pages: 'Sayfa' };
   const STATUS = { draft: 'Taslak', review: 'İncelemede', published: 'Yayında' };
-  const LANG = { tr: 'TR', en: 'EN' };
+  let LANG = {}; let DEFAULT_LANG = 'tr'; let DATE_LOCALE = 'tr'; // bootstrap tohumu; /api/config override eder
   const state = { view: 'content', filters: { col: '', status: '', q: '', lang: '' }, editing: null, newDraft: null, items: [], tasks: [] };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const fmtTs = (t) => new Date(t).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString(DATE_LOCALE, { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const fmtTs = (t) => new Date(t).toLocaleString(DATE_LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
   async function api(p, opts = {}) {
     const r = await fetch(p, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -185,7 +185,7 @@
     const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish'];
     const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın' };
     main.innerHTML = `
-      <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (mcp/agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
+      <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (kök agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Agent</th>${permKeys.map((k) => `<th>${labels[k]}</th>`).join('')}</tr></thead>
         <tbody>${agents.map((a) => `
@@ -200,7 +200,7 @@
     const { col, status, q, lang } = state.filters;
     return state.items
       .filter((i) => (!col || i.collection === col) && (!status || i.status === status) &&
-        (!lang || (i.lang || 'tr') === lang) &&
+        (!lang || (i.lang || DEFAULT_LANG) === lang) &&
         (!q || (i.title + ' ' + i.id).toLowerCase().includes(q.toLowerCase())))
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
@@ -212,7 +212,7 @@
       <tr>
         <td class="cell-title" data-label="Başlık"><strong>${esc(i.title)}</strong><span class="slug">${esc(i.collection)}/${esc(i.id)}</span></td>
         <td data-label="Tür"><span class="badge b-type">${COLS[i.collection]}</span></td>
-        <td data-label="Dil"><span class="badge ${i.lang === 'en' ? 'b-en' : 'b-type'}">${LANG[i.lang] || 'TR'}</span></td>
+        <td data-label="Dil"><span class="badge ${i.lang !== DEFAULT_LANG ? 'b-en' : 'b-type'}">${LANG[i.lang] || DEFAULT_LANG.toUpperCase()}</span></td>
         <td data-label="Durum"><span class="badge b-${i.status}">${STATUS[i.status]}</span></td>
         <td data-label="Yazar">${esc(i.author)}</td>
         <td data-label="Tarih">${fmtDate(i.date)}</td>
@@ -253,7 +253,7 @@
   function renderEditor() {
     const e = state.editing;
     const n = state.newDraft || {};
-    const d = e ? e.data : { title: n.title || '', excerpt: n.excerpt || '', status: 'draft', price: n.price || 0, stock: n.stock || 0, seoTitle: n.seoTitle || '', seoDesc: n.seoDesc || '', lang: n.lang || 'tr', translationOf: n.translationOf || '' };
+    const d = e ? e.data : { title: n.title || '', excerpt: n.excerpt || '', status: 'draft', price: n.price || 0, stock: n.stock || 0, seoTitle: n.seoTitle || '', seoDesc: n.seoDesc || '', lang: n.lang || DEFAULT_LANG, translationOf: n.translationOf || '' };
     const col = e ? e.collection : (n.col || 'blog');
     const body = e ? e.body : (n.body || '');
     main.innerHTML = `
@@ -273,7 +273,7 @@
         <div class="grid2">
           <div class="field"><label for="e-lang">Dil</label>
             <select id="e-lang">
-              ${Object.entries(LANG).map(([k, v]) => `<option value="${k}" ${(d.lang || 'tr') === k ? 'selected' : ''}>${v}</option>`).join('')}
+              ${Object.entries(LANG).map(([k, v]) => `<option value="${k}" ${(d.lang || DEFAULT_LANG) === k ? 'selected' : ''}>${v}</option>`).join('')}
             </select></div>
           <div class="field"><label for="e-translationOf">Çeviri — karşı dilin slug'ı</label><input id="e-translationOf" value="${esc(d.translationOf)}" placeholder="örn. cold-brew-oranlari"></div>
         </div>
@@ -424,7 +424,7 @@
         $('#build-state').textContent = 'astro build çalışıyor…';
         try {
           const r = await api('/api/build', { method: 'POST' });
-          $('#build-state').textContent = (r.ok ? 'Son build: OK · ' : 'Son build: FAIL · ') + new Date().toLocaleTimeString('tr-TR');
+          $('#build-state').textContent = (r.ok ? 'Son build: OK · ' : 'Son build: FAIL · ') + new Date().toLocaleTimeString(DATE_LOCALE);
           toast(r.ok ? 'Build OK — /site/ güncel' : 'Build FAIL: ' + r.tail, r.ok ? 'ok' : 'err');
         } finally { btn.disabled = false; btn.textContent = 'Build al'; }
         await loadAll();
@@ -444,7 +444,15 @@
   const savedTheme = localStorage.getItem('ap-theme');
   if (savedTheme) document.documentElement.style.colorScheme = savedTheme;
 
-  loadAll().catch((e) => toast(e.message, 'err'));
+  api('/api/config')
+    .then((c) => {
+      LANG = Object.fromEntries(c.locales.map((l) => [l, l.toUpperCase()]));
+      DEFAULT_LANG = c.defaultLocale;
+      DATE_LOCALE = c.defaultLocale;
+    })
+    .catch(() => {})
+    .then(() => loadAll())
+    .catch((e) => toast(e.message, 'err'));
 })();
 </script>
 </body>

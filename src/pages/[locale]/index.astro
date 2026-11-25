@@ -1,0 +1,9 @@
+---
+import Home from '../../components/Home.astro';
+import { otherLocales } from '../../lib/site.config';
+export async function getStaticPaths() {
+  return otherLocales.map((locale) => ({ params: { locale }, props: { locale } }));
+}
+const { locale } = Astro.props;
+---
+<Home lang={locale} />

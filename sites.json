@@ -1,0 +1,8 @@
+[
+  {
+    "id": "kozkahve",
+    "name": "Köz Kahve",
+    "locales": ["tr", "en"],
+    "defaultLocale": "tr"
+  }
+]

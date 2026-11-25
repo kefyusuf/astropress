@@ -1,14 +1,15 @@
 ---
 import '../styles/global.css';
-interface Props { title: string; description?: string; lang?: 'tr' | 'en'; altHref?: string; }
-const { title, lang = 'tr', altHref } = Astro.props;
-const en = lang === 'en';
-const description = Astro.props.description || (en
-  ? 'Köz Kahve — third-wave coffee, roasted right.'
-  : 'Köz Kahve — üçüncü nesil kahve, doğru kavurma.');
-const home = en ? '/en/' : '/';
-const aboutHref = en ? '/en/about/' : '/hakkimizda/';
-const switchHref = altHref || (en ? '/' : '/en/');
+import { defaultLocale, localePrefix, locales, type Locale } from '../lib/site.config';
+import { other } from '../lib/i18n';
+import { ui } from '../lib/ui';
+interface Props { title: string; description?: string; lang?: Locale; altHref?: string; }
+const { title, lang = defaultLocale, altHref } = Astro.props;
+const t = ui[lang];
+const description = Astro.props.description || t.description;
+const home = localePrefix(lang) + '/';
+const aboutHref = `${localePrefix(lang)}/${t.aboutSlug}/`;
+const switchHref = altHref || `${localePrefix(other(lang))}/`;
 ---
 <!doctype html>
 <html lang={lang}>
@@ -25,12 +26,13 @@ const switchHref = altHref || (en ? '/' : '/en/');
       <span class="brand-mark">☕</span> Köz Kahve
     </a>
     <nav>
-      <a href={home}>{en ? 'Shop' : 'Mağaza'}</a>
+      <a href={home}>{t.shop}</a>
       <a href={home + '#blog'}>Blog</a>
-      <a href={aboutHref}>{en ? 'About' : 'Hakkımızda'}</a>
+      <a href={aboutHref}>{t.about}</a>
       <span class="lang-switch">
-        {en ? <a href={switchHref}>TR</a> : <span class="active">TR</span>}
-        {en ? <span class="active">EN</span> : <a href={switchHref}>EN</a>}
+        {locales.map((l) => l === lang
+          ? <span class="active">{l.toUpperCase()}</span>
+          : <a href={switchHref}>{l.toUpperCase()}</a>)}
       </span>
     </nav>
   </header>
@@ -38,12 +40,8 @@ const switchHref = altHref || (en ? '/' : '/en/');
     <slot />
   </main>
   <footer class="site-foot">
-    {en
-      ? <span>© 2026 Köz Kahve · managed with <strong>AstroPress</strong></span>
-      : <span>© 2026 Köz Kahve · <strong>AstroPress</strong> ile yönetiliyor</span>}
-    {en
-      ? <span>Astro static output · agent + human co-production</span>
-      : <span>Astro statik çıktı · agent + insan ortak üretimi</span>}
+    <span set:html={t.footerManaged} />
+    <span>{t.footerTagline}</span>
   </footer>
 </body>
 </html>

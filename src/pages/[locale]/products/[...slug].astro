@@ -1,0 +1,15 @@
+---
+import { getCollection } from 'astro:content';
+import EntryView from '../../../components/EntryView.astro';
+import { otherLocales } from '../../../lib/site.config';
+import { langOf } from '../../../lib/i18n';
+export async function getStaticPaths() {
+  const groups = await Promise.all(otherLocales.map(async (locale) => {
+    const products = await getCollection('products', (entry) => entry.data.status === 'published' && langOf(entry) === locale);
+    return products.map((entry) => ({ params: { locale, slug: entry.id }, props: { entry, locale } }));
+  }));
+  return groups.flat();
+}
+const { entry, locale } = Astro.props;
+---
+<EntryView collection="products" entry={entry} lang={locale} />
