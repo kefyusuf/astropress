@@ -8,6 +8,7 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', { limit: '1mb' });
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || '127.0.0.1';
+  app.enableShutdownHooks();
   await app.listen(port, host);
   console.log(`AstroPress backend HTTP: http://${host}:${port}`);
 }
