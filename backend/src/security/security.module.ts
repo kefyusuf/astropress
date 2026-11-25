@@ -2,6 +2,11 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AGENTS_FILE, AgentRegistry, defaultAgentsFile } from './infrastructure/agent-registry';
+import { IDENTITY_RESOLVER } from './application/identity-resolver';
+import { TOKEN_STORE, TokenStore } from './application/token-store';
+import { TOKEN_STORE_FILE, FileTokenStore, defaultTokenStoreFile } from './infrastructure/file-token-store';
+import { HeaderIdentityResolver } from './infrastructure/header-identity.resolver';
+import { TokenIdentityResolver } from './infrastructure/token-identity.resolver';
 import { HostMiddleware } from './interface/host.middleware';
 import { IdentityMiddleware } from './interface/identity.middleware';
 import { PermissionGuard } from './interface/permission.guard';
@@ -26,6 +31,16 @@ import { createRedisConnection } from '../infrastructure/redis-connection';
   providers: [
     { provide: AGENTS_FILE, useFactory: () => defaultAgentsFile() },
     AgentRegistry,
+    { provide: TOKEN_STORE_FILE, useFactory: () => defaultTokenStoreFile() },
+    { provide: TOKEN_STORE, useClass: FileTokenStore },
+    {
+      provide: IDENTITY_RESOLVER,
+      useFactory: (registry: AgentRegistry, store: TokenStore) =>
+        (process.env.ASTROPRESS_AUTH || 'header') === 'token'
+          ? new TokenIdentityResolver(store, registry)
+          : new HeaderIdentityResolver(registry),
+      inject: [AgentRegistry, TOKEN_STORE],
+    },
     { provide: APP_GUARD, useClass: AgentThrottlerGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],

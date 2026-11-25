@@ -1,21 +1,13 @@
-import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
-import { AgentRegistry } from '../infrastructure/agent-registry';
-import { UnknownAgentError } from '../domain/errors';
+import { Inject, Injectable, NestMiddleware } from '@nestjs/common';
+import { IDENTITY_RESOLVER, IdentityResolver } from '../application/identity-resolver';
 import { AgentRequest } from './agent-request';
 
 @Injectable()
 export class IdentityMiddleware implements NestMiddleware<AgentRequest> {
-  constructor(private readonly registry: AgentRegistry) {}
+  constructor(@Inject(IDENTITY_RESOLVER) private readonly resolver: IdentityResolver) {}
 
   use(req: AgentRequest, res: unknown, next: (error?: any) => void): void {
-    const header = req.headers['x-astropress-agent'];
-    const id = (typeof header === 'string' && header) || 'content-studio';
-    try {
-      req.agent = this.registry.getAgent(id);
-    } catch (err) {
-      if (err instanceof UnknownAgentError) throw new UnauthorizedException(err.message);
-      throw err;
-    }
+    req.agent = this.resolver.resolve(req);
     next();
   }
 }
