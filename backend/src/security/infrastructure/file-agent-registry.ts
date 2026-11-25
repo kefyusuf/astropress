@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { Agent, Perms } from '../domain/agent';
 import { UnknownAgentError } from '../domain/errors';
+import { AgentRegistry } from '../application/agent-registry';
 
 export const AGENTS_FILE = Symbol('AGENTS_FILE');
 
@@ -21,20 +22,20 @@ export function defaultAgentsFile(): string {
 }
 
 @Injectable()
-export class AgentRegistry {
+export class FileAgentRegistry implements AgentRegistry {
   private readonly registry: Record<string, { name: string; perms: Perms }>;
 
   constructor(@Inject(AGENTS_FILE) file: string) {
     this.registry = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
 
-  getAgent(id: string): Agent {
+  async getAgent(id: string): Promise<Agent> {
     if (!Object.prototype.hasOwnProperty.call(this.registry, id)) throw new UnknownAgentError(id);
     const a = this.registry[id];
     return { id, name: a.name, perms: a.perms };
   }
 
-  listAgents(): Agent[] {
+  async listAgents(): Promise<Agent[]> {
     return Object.entries(this.registry).map(([id, a]) => ({ id, name: a.name, perms: a.perms }));
   }
 }

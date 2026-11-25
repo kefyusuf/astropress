@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { UnauthorizedException } from '@nestjs/common';
 import { TokenIdentityResolver } from '../../src/security/infrastructure/token-identity.resolver';
-import { AgentRegistry } from '../../src/security/infrastructure/agent-registry';
+import { FileAgentRegistry } from '../../src/security/infrastructure/file-agent-registry';
 import { TokenStore, hashToken } from '../../src/security/application/token-store';
 import { AgentRequest } from '../../src/security/interface/agent-request';
 
@@ -34,47 +34,47 @@ function setup(): { resolver: TokenIdentityResolver; store: StubTokenStore } {
   fs.writeFileSync(file, JSON.stringify(FIXTURE), 'utf8');
   const store = new StubTokenStore();
   store.setHash('content-studio', hashToken('astro_valid'));
-  return { resolver: new TokenIdentityResolver(store, new AgentRegistry(file)), store };
+  return { resolver: new TokenIdentityResolver(store, new FileAgentRegistry(file)), store };
 }
 
 function req(headers: Record<string, string>): AgentRequest {
   return { method: 'GET', headers };
 }
 
-test('valid bearer → correct agent', () => {
+test('valid bearer → correct agent', async () => {
   const { resolver } = setup();
-  const agent = resolver.resolve(req({ authorization: 'Bearer astro_valid' }));
+  const agent = await resolver.resolve(req({ authorization: 'Bearer astro_valid' }));
   assert.equal(agent.id, 'content-studio');
 });
 
-test('missing authorization → 401 (fallback YOK)', () => {
+test('missing authorization → 401 (fallback YOK)', async () => {
   const { resolver } = setup();
-  assert.throws(() => resolver.resolve(req({})), UnauthorizedException);
+  await assert.rejects(resolver.resolve(req({})), UnauthorizedException);
 });
 
-test('non-Bearer scheme → 401', () => {
+test('non-Bearer scheme → 401', async () => {
   const { resolver } = setup();
-  assert.throws(() => resolver.resolve(req({ authorization: 'Basic astro_valid' })), UnauthorizedException);
+  await assert.rejects(resolver.resolve(req({ authorization: 'Basic astro_valid' })), UnauthorizedException);
 });
 
-test('unknown token → 401', () => {
+test('unknown token → 401', async () => {
   const { resolver } = setup();
-  assert.throws(() => resolver.resolve(req({ authorization: 'Bearer astro_wrong' })), UnauthorizedException);
+  await assert.rejects(resolver.resolve(req({ authorization: 'Bearer astro_wrong' })), UnauthorizedException);
 });
 
-test('X-Astropress-Agent ignored (no bearer → 401)', () => {
+test('X-Astropress-Agent ignored (no bearer → 401)', async () => {
   const { resolver } = setup();
-  assert.throws(() => resolver.resolve(req({ 'x-astropress-agent': 'content-studio' })), UnauthorizedException);
+  await assert.rejects(resolver.resolve(req({ 'x-astropress-agent': 'content-studio' })), UnauthorizedException);
 });
 
-test('registry drift: hash → unknown agentId → 401', () => {
+test('registry drift: hash → unknown agentId → 401', async () => {
   const { resolver, store } = setup();
   store.setHash('ghost', hashToken('astro_ghost'));
-  assert.throws(() => resolver.resolve(req({ authorization: 'Bearer astro_ghost' })), UnauthorizedException);
+  await assert.rejects(resolver.resolve(req({ authorization: 'Bearer astro_ghost' })), UnauthorizedException);
 });
 
-test('bearer case-insensitive scheme', () => {
+test('bearer case-insensitive scheme', async () => {
   const { resolver } = setup();
-  const agent = resolver.resolve(req({ authorization: 'bearer astro_valid' }));
+  const agent = await resolver.resolve(req({ authorization: 'bearer astro_valid' }));
   assert.equal(agent.id, 'content-studio');
 });

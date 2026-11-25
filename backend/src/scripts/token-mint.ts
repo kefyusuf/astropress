@@ -1,22 +1,22 @@
 import 'reflect-metadata';
-import { AgentRegistry, defaultAgentsFile } from '../security/infrastructure/agent-registry';
+import { FileAgentRegistry, defaultAgentsFile } from '../security/infrastructure/file-agent-registry';
 import { FileTokenStore, defaultTokenStoreFile } from '../security/infrastructure/file-token-store';
 import { MintToken } from '../security/application/mint-token';
 import { UnknownAgentError } from '../security/domain/errors';
 
 // Token mint CLI: npm --prefix backend run token:mint -- <agentId>
 // Plaintext token BİR KEZ basılır; store'da yalnız sha256 hash. Re-mint = rotate.
-function main(): void {
+async function main(): Promise<void> {
   const agentId = process.argv[2];
   if (!agentId) {
     console.error('Kullanım: token:mint -- <agentId>');
     process.exitCode = 1;
     return;
   }
-  const registry = new AgentRegistry(defaultAgentsFile());
+  const registry = new FileAgentRegistry(defaultAgentsFile());
   const store = new FileTokenStore(defaultTokenStoreFile());
   try {
-    const token = new MintToken(registry, store).execute(agentId);
+    const token = await new MintToken(registry, store).execute(agentId);
     console.log(token);
   } catch (err) {
     if (err instanceof UnknownAgentError) {
@@ -28,4 +28,4 @@ function main(): void {
   }
 }
 
-main();
+void main();
