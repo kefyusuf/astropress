@@ -14,6 +14,7 @@
     "start": "node dist/src/main.js",
     "seed": "node dist/src/scripts/bridge.js seed",
     "export": "node dist/src/scripts/bridge.js export",
+    "token:mint": "node dist/src/scripts/token-mint.js",
     "test": "npm run build && node run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
