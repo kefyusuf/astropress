@@ -12,7 +12,7 @@ export class FakeBuildRunner implements BuildRunner {
     this.results = results ?? [{ ok: true, exitCode: 0, logTail: 'fake build ok' }];
   }
 
-  async run(): Promise<BuildResult> {
+  async run(_jobId: string): Promise<BuildResult> {
     this.active++;
     this.maxActive = Math.max(this.maxActive, this.active);
     this.calls++;
@@ -28,7 +28,7 @@ export class BlockingBuildRunner implements BuildRunner {
   private release!: () => void;
   private readonly gate = new Promise<void>((r) => { this.release = r; });
 
-  async run(): Promise<BuildResult> {
+  async run(_jobId: string): Promise<BuildResult> {
     this.calls++;
     await this.gate;
     return { ok: true, exitCode: 0, logTail: 'blocking build ok' };

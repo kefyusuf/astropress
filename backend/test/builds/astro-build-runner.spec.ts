@@ -1,20 +1,65 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import childProcess from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { AstroBuildRunner, defaultRoot, killTree } from '../../src/builds/infrastructure/astro-build-runner';
+import { BuildWorkspace } from '../../src/builds/infrastructure/build-workspace';
 
-// Gerçek astro build (birkaç sn): spawn wiring'in dürüst kanıtı. Serial runner → dist/ yarışı yok.
-test('AstroBuildRunner gerçek astro build → ok, exit 0, dist/ var', async () => {
+// Gerçek astro build (birkaç sn): isolation dürüst kanıtı. run(jobId) → izole root, cleanup finally (ephemeral).
+test('AstroBuildRunner gerçek astro build → ok exit 0, workspace cleanup (root/dist DEĞİL)', async () => {
   const root = defaultRoot();
-  const runner = new AstroBuildRunner(root);
-  const result = await runner.run();
-  assert.equal(result.ok, true, `build failed: ${result.error}\n${result.logTail}`);
-  assert.equal(result.exitCode, 0);
-  assert.ok(result.logTail.length > 0);
-  assert.ok(fs.existsSync(path.join(root, 'dist')), 'dist/ üretilmedi');
+  const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-runner-ws-'));
+  const runner = new AstroBuildRunner(root, new BuildWorkspace(wsDir));
+  const result = await runner.run('real-job-1');
+  try {
+    assert.equal(result.ok, true, `build failed: ${result.error}\n${result.logTail}`);
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.logTail.length > 0);
+    assert.ok(!fs.existsSync(path.join(wsDir, 'real-job-1')), 'workspace cleanup edilmeli (ephemeral)');
+  } finally { fs.rmSync(wsDir, { recursive: true, force: true }); }
+});
+
+test('run(jobId): spawn --root iso --outDir iso/dist, cwd iso (mock spawn)', async () => {
+  const root = defaultRoot();
+  const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-runner-ws-'));
+  const runner = new AstroBuildRunner(root, new BuildWorkspace(wsDir));
+  const calls: Array<{ args: string[]; cwd: string }> = [];
+  const m = mock.method(childProcess, 'spawn', (_cmd: string, args: string[], opts: { cwd: string }) => {
+    calls.push({ args, cwd: opts.cwd });
+    const child = new EventEmitter() as EventEmitter & { pid: number; stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
+    child.pid = 999;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => true;
+    setImmediate(() => { child.stdout.emit('data', Buffer.from('ok')); child.emit('close', 0); });
+    return child as unknown as ChildProcess;
+  });
+  try {
+    const result = await runner.run('mock-job');
+    assert.equal(result.ok, true);
+    const iso = path.join(wsDir, 'mock-job');
+    assert.ok(calls[0].args.includes('--root') && calls[0].args.includes(iso), '--root iso');
+    assert.ok(calls[0].args.includes('--outDir') && calls[0].args.includes(path.join(iso, 'dist')), '--outDir iso/dist');
+    assert.equal(calls[0].cwd, iso, 'cwd iso');
+  } finally { m.mock.restore(); fs.rmSync(wsDir, { recursive: true, force: true }); }
+});
+
+test('isolation create hatası → BuildResult failed (run throw ETMEZ)', async () => {
+  const root = defaultRoot();
+  const wsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-runner-ws-'));
+  const ws = new BuildWorkspace(wsDir);
+  ws.create = () => { throw new Error('junction fail'); };
+  const runner = new AstroBuildRunner(root, ws);
+  try {
+    const result = await runner.run('fail-job');
+    assert.equal(result.ok, false);
+    assert.equal(result.exitCode, -1);
+    assert.match(result.error ?? '', /junction fail/);
+  } finally { fs.rmSync(wsDir, { recursive: true, force: true }); }
 });
 
 // M2: killTree cross-platform dispatch — deterministic mock (flaky real-grandchild test YOK).

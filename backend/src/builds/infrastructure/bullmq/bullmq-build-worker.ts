@@ -87,7 +87,7 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     // queued → run
     const running = build.markRunning(new Date().toISOString());
     await this.repo.save(running);
-    const result = await this.runner.run();
+    const result = await this.runner.run(build.id);
     const done = new Date().toISOString();
     const finished = result.ok
       ? running.markSucceeded(result, done)

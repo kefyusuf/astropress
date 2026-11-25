@@ -66,7 +66,7 @@ export class BuildWorker implements OnModuleInit, BuildDispatcher {
       if (!next) return;
       const running = next.markRunning(new Date().toISOString());
       await this.repo.save(running);
-      const result = await this.runner.run();
+      const result = await this.runner.run(next.id);
       const done = new Date().toISOString();
       const finished = result.ok
         ? running.markSucceeded(result, done)

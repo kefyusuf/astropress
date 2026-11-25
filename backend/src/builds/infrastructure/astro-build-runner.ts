@@ -2,9 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BuildResult } from '../domain/build-job';
 import { BuildRunner } from '../application/ports';
+import { BuildWorkspace } from './build-workspace';
 
 export const ASTROPRESS_ROOT = Symbol('ASTROPRESS_ROOT');
 
@@ -41,19 +42,39 @@ export function killTree(child: ChildProcess): void {
 
 @Injectable()
 export class AstroBuildRunner implements BuildRunner {
-  constructor(@Inject(ASTROPRESS_ROOT) private readonly root: string) {}
+  private readonly logger = new Logger(AstroBuildRunner.name);
+  constructor(
+    @Inject(ASTROPRESS_ROOT) private readonly root: string,
+    @Inject(BuildWorkspace) private readonly workspace: BuildWorkspace,
+  ) {}
 
   // Async spawn (spawnSync DEĞİL). Daima BuildResult resolve eder (throw ETMEZ).
-  run(): Promise<BuildResult> {
+  // Per-build izole root (dist + .astro) → N eşzamanlı build yarışmaz. cleanup finally (ephemeral).
+  async run(jobId: string): Promise<BuildResult> {
+    let iso: string;
+    try {
+      iso = this.workspace.create(this.root, jobId);
+    } catch (err) {
+      return { ok: false, exitCode: -1, logTail: '', error: `workspace create: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    try {
+      return await this.runAstro(iso);
+    } finally {
+      try { this.workspace.cleanup(jobId); }
+      catch (err) { this.logger.warn(`workspace cleanup: ${err instanceof Error ? err.message : String(err)}`); }
+    }
+  }
+
+  private runAstro(iso: string): Promise<BuildResult> {
     return new Promise((resolve) => {
       // astro CLI entry versiyonla değişir (5: astro.js, 7: bin/astro.mjs) → package.json bin'den çöz.
-      // root'a anchored require: astro root node_modules'ta (backend'de değil).
+      // root'a anchored require: astro real root node_modules'ta (iso'da junction).
       const rootRequire = createRequire(path.join(this.root, 'package.json'));
       const astroPkg = rootRequire('astro/package.json');
       const binRel = typeof astroPkg.bin === 'string' ? astroPkg.bin : astroPkg.bin.astro;
       const astroCli = path.join(path.dirname(rootRequire.resolve('astro/package.json')), binRel);
-      // detached:true → POSIX'te child process-group leader (killTree -pid ile tüm gruba sinyal).
-      const child = spawn(process.execPath, [astroCli, 'build'], { cwd: this.root, detached: true });
+      // --root iso → .astro cache iso'da (content collection isolation); --outDir iso/dist → çıktı isolation.
+      const child = spawn(process.execPath, [astroCli, 'build', '--root', iso, '--outDir', path.join(iso, 'dist')], { cwd: iso, detached: true });
       let out = '';
       let settled = false;
       const tail = () => out.split('\n').slice(-TAIL_LINES).join('\n');
