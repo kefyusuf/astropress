@@ -1,4 +1,5 @@
 import { BuildJob, BuildResult } from '../domain/build-job';
+import { BuildEvent } from '../domain/build-event';
 
 export const BUILD_JOB_REPOSITORY = Symbol('BUILD_JOB_REPOSITORY');
 export const BUILD_RUNNER = Symbol('BUILD_RUNNER');
@@ -24,4 +25,14 @@ export const BUILD_DISPATCHER = Symbol('BUILD_DISPATCHER');
 // bullmq adapter queue.add (durable). EnqueueBuild concrete worker yerine bu port'a bağlanır.
 export interface BuildDispatcher {
   dispatch(job: BuildJob): Promise<void>;
+}
+
+export const EVENT_STORE = Symbol('EVENT_STORE');
+
+// Optimistic concurrency: actual stream version !== expectedVersion → ConcurrencyError.
+// expectedVersion = stream'deki mevcut event sayısı (yeni stream = 0). Batch atomik.
+export interface EventStore {
+  append(streamId: string, events: BuildEvent[], expectedVersion: number): Promise<void>;
+  readStream(streamId: string): Promise<BuildEvent[]>;
+  readAll(): Promise<BuildEvent[]>;
 }
