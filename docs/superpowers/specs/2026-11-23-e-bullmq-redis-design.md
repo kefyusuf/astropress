@@ -251,7 +251,7 @@ sequenceDiagram
 | Timeout (180s) | killTree → `BuildResult{ok:false,error:'timeout'}` → failed | GET 200 failed |
 | Crash mid-build (stalled) | BullMQ stalled + processor running-guard → `markFailed interrupted` | GET 200 failed |
 | Redis unreachable (boot) | log warn, app boot eder (sites API çalışır), builds degrade | boot-safe |
-| Redis unreachable (dispatch) | `queue.add` reject → handle (log), repo queued mirror kalır | POST 201 (queued, degrade) |
+| Redis unreachable (dispatch) | `queue.add` reject → log + RETHROW (R11 ruling); queued mirror boot reconcile ile temizlenir (Group F `markDispatchLost`) | POST 500 (fail-closed) |
 | Processor repo-write fail | log warn + BullMQ job failed | mirror divergence logged |
 | Rate-limit aşımı (mutation) | `ThrottlerException` (Redis veya in-memory storage) | 429 |
 
