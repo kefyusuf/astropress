@@ -36,3 +36,6 @@ export interface EventStore {
   readStream(streamId: string): Promise<BuildEvent[]>;
   readAll(): Promise<BuildEvent[]>;
 }
+
+// Eşzamanlı build sayısı (file N-pool + BullMQ concurrency). default 1 → serial parity.
+export const BUILD_CONCURRENCY = Symbol('BUILD_CONCURRENCY');

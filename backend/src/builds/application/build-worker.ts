@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { BuildJob } from '../domain/build-job';
-import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BuildJobRepository, BuildRunner, BuildDispatcher } from './ports';
+import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_CONCURRENCY, BuildJobRepository, BuildRunner, BuildDispatcher } from './ports';
 
 export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
 
@@ -8,11 +8,13 @@ export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
 export class BuildWorker implements OnModuleInit, BuildDispatcher {
   private readonly logger = new Logger(BuildWorker.name);
   private drainPromise: Promise<void> | null = null;
+  private readonly claimed = new Set<string>();
 
   constructor(
     @Inject(BUILD_JOB_REPOSITORY) private readonly repo: BuildJobRepository,
     @Inject(BUILD_RUNNER) private readonly runner: BuildRunner,
     @Inject(BUILD_RETENTION) private readonly retention: number,
+    @Inject(BUILD_CONCURRENCY) private readonly concurrency: number = 1,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -56,23 +58,41 @@ export class BuildWorker implements OnModuleInit, BuildDispatcher {
     return this.drainPromise;
   }
 
-  // Serial loop: queued job'ları FIFO tek tek işler (concurrency 1 → dist/ yarışı yok).
+  // N-worker pool: her worker FIFO queued claim eder (claimed Set çift-claim guard). N=1 → serial parity.
   private async runDrain(): Promise<void> {
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < this.concurrency; i++) workers.push(this.workerLoop());
+    await Promise.all(workers);
+  }
+
+  private async workerLoop(): Promise<void> {
     for (;;) {
-      const all = await this.repo.findAll();
-      const next = all
-        .filter((j) => j.status === 'queued')
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-      if (!next) return;
-      const running = next.markRunning(new Date().toISOString());
-      await this.repo.save(running);
-      const result = await this.runner.run(next.id);
-      const done = new Date().toISOString();
-      const finished = result.ok
-        ? running.markSucceeded(result, done)
-        : running.markFailed(result.error ?? 'build failed', done, result.exitCode, result.logTail);
-      await this.repo.save(finished);
-      await this.repo.pruneTerminal(this.retention); // D2: terminal history keep-last-N (queued/running korunur)
+      const running = await this.claimNext();
+      if (!running) return;
+      try {
+        const result = await this.runner.run(running.id);
+        const done = new Date().toISOString();
+        const finished = result.ok
+          ? running.markSucceeded(result, done)
+          : running.markFailed(result.error ?? 'build failed', done, result.exitCode, result.logTail);
+        await this.repo.save(finished);
+        await this.repo.pruneTerminal(this.retention); // D2: terminal history keep-last-N (queued/running korunur)
+      } finally {
+        this.claimed.delete(running.id);
+      }
     }
+  }
+
+  // Atomik claim: findAll await sonrası SYNC filter+add (arada await yok) → iki loop aynı job'ı seçemez.
+  private async claimNext(): Promise<BuildJob | null> {
+    const all = await this.repo.findAll();
+    const next = all
+      .filter((j) => j.status === 'queued' && !this.claimed.has(j.id))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    if (!next) return null;
+    this.claimed.add(next.id);
+    const running = next.markRunning(new Date().toISOString());
+    await this.repo.save(running);
+    return running;
   }
 }

@@ -13,11 +13,11 @@ import { FakeBuildRunner } from './fake-build-runner';
 let dir: string;
 afterEach(() => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); });
 
-function setup(results?: BuildResult[], retention = 50) {
+function setup(results?: BuildResult[], retention = 50, concurrency = 1) {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-worker-'));
   const repo = new FileBuildJobRepository(path.join(dir, 'builds.json'));
   const runner = new FakeBuildRunner(results);
-  const worker = new BuildWorker(repo, runner, retention);
+  const worker = new BuildWorker(repo, runner, retention, concurrency);
   return { repo, runner, worker };
 }
 
@@ -132,4 +132,42 @@ test('retention: drain prunes terminal history to keep-last-N', async () => {
   await worker.drain();
   const all = await repo.findAll();
   assert.equal(all.filter((j) => j.status === 'succeeded').length, 2, 'terminal history retention=2 ile sınırlanmalı');
+});
+
+// concurrency-N: N-worker pool + claimed Set (çift-claim guard).
+test('N=2: 3 job → maxActive=2, calls=3, hepsi succeeded (paralel pool)', async () => {
+  const { repo, runner, worker } = setup(undefined, 50, 2);
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z'));
+  await repo.save(BuildJob.newQueued('b', '2026-11-16T10:00:01.000Z'));
+  await repo.save(BuildJob.newQueued('c', '2026-11-16T10:00:02.000Z'));
+  await worker.drain();
+  assert.equal(runner.maxActive, 2, 'N=2 → 2 eşzamanlı');
+  assert.equal(runner.calls, 3, 'çift-processing YOK (claimed Set)');
+  for (const id of ['a', 'b', 'c']) assert.equal((await repo.findById(id))?.status, 'succeeded');
+});
+
+test('N=1 regresyon: serial maxActive=1 (mevcut davranış korunur)', async () => {
+  const { repo, runner, worker } = setup(undefined, 50, 1);
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z'));
+  await repo.save(BuildJob.newQueued('b', '2026-11-16T10:00:01.000Z'));
+  await worker.drain();
+  assert.equal(runner.maxActive, 1);
+  assert.equal(runner.calls, 2);
+});
+
+test('claimed Set: çift-claim yok — N=4, 2 job → calls=2 (distinct)', async () => {
+  const { repo, runner, worker } = setup(undefined, 50, 4);
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z'));
+  await repo.save(BuildJob.newQueued('b', '2026-11-16T10:00:01.000Z'));
+  await worker.drain();
+  assert.equal(runner.calls, 2, 'her job tam 1 kez (claimed Set guard)');
+});
+
+test('N=2 recover: 2 running → hepsi failed interrupted (fail-only)', async () => {
+  const { repo, worker } = setup(undefined, 50, 2);
+  await repo.save(BuildJob.newQueued('a', '2026-11-16T10:00:00.000Z').markRunning('2026-11-16T10:00:00.000Z'));
+  await repo.save(BuildJob.newQueued('b', '2026-11-16T10:00:01.000Z').markRunning('2026-11-16T10:00:01.000Z'));
+  await worker.recover();
+  assert.equal((await repo.findById('a'))?.error, 'interrupted');
+  assert.equal((await repo.findById('b'))?.error, 'interrupted');
 });

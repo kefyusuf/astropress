@@ -1,5 +1,5 @@
 import { Module, Logger } from '@nestjs/common';
-import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_DISPATCHER, EVENT_STORE, EventStore } from './application/ports';
+import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_DISPATCHER, BUILD_CONCURRENCY, EVENT_STORE, EventStore } from './application/ports';
 import { BUILDS_FILE, defaultBuildsFile } from './infrastructure/file-build-job.repository';
 import { FileEventStore, defaultEventsDir } from './infrastructure/file-event-store';
 import { BuildWorkspace, BUILD_WORKSPACE_DIR, defaultWorkspaceDir } from './infrastructure/build-workspace';
@@ -56,6 +56,7 @@ const engineProviders = engine === 'bullmq'
     { provide: DATABASE_URL, useFactory: () => process.env.DATABASE_URL || '' },
     { provide: BUILD_QUEUE_LIMIT, useFactory: () => Number(process.env.ASTROPRESS_BUILD_QUEUE_LIMIT) || 10 },
     { provide: BUILD_RETENTION, useFactory: () => Number(process.env.ASTROPRESS_BUILD_RETENTION) || 50 },
+    { provide: BUILD_CONCURRENCY, useFactory: () => Number(process.env.ASTROPRESS_BUILD_CONCURRENCY) || 1 },
     eventStoreProvider,
     { provide: BUILD_JOB_REPOSITORY, useClass: EventSourcedBuildJobRepository },
     { provide: BUILD_RUNNER, useClass: AstroBuildRunner },
