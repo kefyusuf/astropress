@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
 import { BuildResult } from '../domain/build-job';
@@ -45,7 +46,12 @@ export class AstroBuildRunner implements BuildRunner {
   // Async spawn (spawnSync DEĞİL). Daima BuildResult resolve eder (throw ETMEZ).
   run(): Promise<BuildResult> {
     return new Promise((resolve) => {
-      const astroCli = path.join(this.root, 'node_modules', 'astro', 'astro.js');
+      // astro CLI entry versiyonla değişir (5: astro.js, 7: bin/astro.mjs) → package.json bin'den çöz.
+      // root'a anchored require: astro root node_modules'ta (backend'de değil).
+      const rootRequire = createRequire(path.join(this.root, 'package.json'));
+      const astroPkg = rootRequire('astro/package.json');
+      const binRel = typeof astroPkg.bin === 'string' ? astroPkg.bin : astroPkg.bin.astro;
+      const astroCli = path.join(path.dirname(rootRequire.resolve('astro/package.json')), binRel);
       // detached:true → POSIX'te child process-group leader (killTree -pid ile tüm gruba sinyal).
       const child = spawn(process.execPath, [astroCli, 'build'], { cwd: this.root, detached: true });
       let out = '';

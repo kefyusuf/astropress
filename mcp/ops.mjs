@@ -1,7 +1,10 @@
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import * as store from './store.mjs';
 import { normalizeLang } from './config.mjs';
+
+const require = createRequire(import.meta.url);
 
 // Guardrail'ler tek kaynak: create/update status'u asla değiştirmez;
 // yayın yalnız requestPublish -> approve (insan) zinciriyle olur.
@@ -112,7 +115,10 @@ export function tasks({ status } = {}) {
 }
 
 export function build(actor = 'agent') {
-  const astroCli = path.join(store.ROOT, 'node_modules', 'astro', 'astro.js');
+  // astro CLI entry versiyonla değişir (5: astro.js, 7: bin/astro.mjs) → package.json bin'den çöz.
+  const astroPkg = require('astro/package.json');
+  const binRel = typeof astroPkg.bin === 'string' ? astroPkg.bin : astroPkg.bin.astro;
+  const astroCli = path.join(path.dirname(require.resolve('astro/package.json')), binRel);
   const r = spawnSync(process.execPath, [astroCli, 'build'], { cwd: store.ROOT, encoding: 'utf8', timeout: 180000 });
   const out = (r.stdout || '') + (r.stderr || '');
   const ok = r.status === 0;
