@@ -74,6 +74,8 @@ import { createRedisConnection } from '../infrastructure/redis-connection';
 })
 export class SecurityModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(HostMiddleware, IdentityMiddleware).forRoutes('*');
+    // Health probe'ları token taşımaz → identity muaf (spec karar 7); Host guard health dahil kalır.
+    consumer.apply(HostMiddleware).forRoutes('*');
+    consumer.apply(IdentityMiddleware).exclude('healthz', 'readyz').forRoutes('*');
   }
 }

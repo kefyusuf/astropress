@@ -141,7 +141,7 @@ kapanması + doc hizalama. Koda karşı doğrulama (2026-11-24) kapsamı daraltt
 
 ## 8. Kapsam-dışı kalan borç (roadmap seam'leri)
 
-- **Faz-3 EventStore:** event-sourced tam recovery + readiness promise + throttler atomicity yeniden değerlendirme.
+- **Faz-3 EventStore:** event-sourced tam recovery + readiness promise + throttler atomicity yeniden değerlendirme. *(readiness + Lua atomicity: 2026-11-25 hardening fazında tamamlandı — bkz. 2026-11-25-hardening-readiness-lua-design.md)*
 - **Concurrency-N seam:** parity concurrency 1 → N worker (multi-instance yatay ölçek).
 - **Faz-2+ auth:** gerçek token/OAuth + distributed registry (D1 seam'leri).
 - **Item 8 Pazaryeri:** Trendyol/Hepsiburada — gerçek API anahtarı gerektirir, external blocked (goal dışı).

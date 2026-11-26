@@ -11,6 +11,8 @@ export const POLICY: Record<string, PolicyValue> = {
   'POST builds': 'edit',
   'GET builds': 'public',
   'GET builds/:id': 'public',
+  'GET healthz': 'public',
+  'GET readyz': 'public',
 };
 
 // @Get()/@Post() no-arg handler path '/' → strip → '' → controller only.
