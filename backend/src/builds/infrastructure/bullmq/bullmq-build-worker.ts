@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy, Optional } from '@nestjs/common';
 import { Worker, Job, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { BuildJob } from '../../domain/build-job';
@@ -6,6 +6,7 @@ import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_CONCURRENCY, BuildJobReposito
 import { BUILD_RETENTION } from '../../application/build-worker';
 import { BUILD_QUEUE_NAME, BUILD_QUEUE } from './build-queue';
 import { REDIS_URL, createRedisConnection } from '../../../infrastructure/redis-connection';
+import { ReadinessState } from '../../../health/readiness-state';
 
 @Injectable()
 export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
@@ -20,9 +21,12 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(REDIS_URL) private readonly url: string,
     @Inject(BUILD_QUEUE) private readonly queue: Queue,
     @Inject(BUILD_CONCURRENCY) private readonly concurrency: number,
+    @Optional() private readonly readiness?: ReadinessState,
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // H2: tek ok flag — init-fail + recover-ok kombinasyonu ready RAPORLAMAZ (overwrite yok).
+    let ok = true;
     // Boot-safe: Redis yoksa Worker error event log'lanır, app brick OLMAZ (sites API boot eder).
     try {
       this.connection = createRedisConnection(this.url);
@@ -33,7 +37,10 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
         stalledInterval: 30000,
       });
       this.worker.on('error', (err) => this.logger.warn(`bullmq worker error: ${err.message}`));
+      // H2 boot promise: 'ready' bounded await → listen worker bağlıyken döner (Redis-up deterministik).
+      await this.waitWorkerReady();
     } catch (err) {
+      ok = false;
       this.logger.warn(`bullmq worker init başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
     // Boot recover parity (spec §7): stale running mirror → failed interrupted (BuildWorker.recover emsali).
@@ -50,8 +57,25 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
         }
       }
     } catch (err) {
+      ok = false;
       this.logger.warn(`bullmq boot recover başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
+    this.readiness?.set('buildEngine', ok);
+  }
+
+  // H2: bounded 'ready' await (waitReady/boundedGetJob emsali). Timeout/down → reject → init catch →
+  // degraded; boot brick OLMAZ. unref: timer process exit'ini tutmaz; off: timeout'ta listener temizliği.
+  private waitWorkerReady(timeoutMs = 2000): Promise<void> {
+    if (this.connection?.status === 'ready') return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const onReady = () => { clearTimeout(timer); resolve(); };
+      const timer = setTimeout(() => {
+        this.worker?.off('ready', onReady);
+        reject(new Error('bullmq worker ready timeout — Redis unreachable'));
+      }, timeoutMs);
+      timer.unref();
+      this.worker?.once('ready', onReady);
+    });
   }
 
   // Boot-safe: getJob unreachable Redis'te hang eder (throw etmez). 2s timeout race → reject →

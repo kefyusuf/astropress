@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { BuildJob } from '../domain/build-job';
 import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_CONCURRENCY, BuildJobRepository, BuildRunner, BuildDispatcher } from './ports';
+import { ReadinessState } from '../../health/readiness-state';
 
 export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
 
@@ -15,16 +16,20 @@ export class BuildWorker implements OnModuleInit, BuildDispatcher {
     @Inject(BUILD_RUNNER) private readonly runner: BuildRunner,
     @Inject(BUILD_RETENTION) private readonly retention: number,
     @Inject(BUILD_CONCURRENCY) private readonly concurrency: number = 1,
+    @Optional() private readonly readiness?: ReadinessState,
   ) {}
 
   async onModuleInit(): Promise<void> {
+    let ok = true;
     try {
       await this.recover();
       this.kick(); // I2: queued job'ları restart'ta resume et (background drain). Interrupted running retry EDİLMEZ.
     } catch (err) {
+      ok = false;
       // Boot recovery best-effort: never brick the app (sites API dahil tüm backend boot eder).
       this.logger.warn(`boot recovery başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
+    this.readiness?.set('buildEngine', ok);
   }
 
   // Boot recovery: önceki crash'ten kalan running job'lar failed (interrupted). Empty/no-running ise write YOK.

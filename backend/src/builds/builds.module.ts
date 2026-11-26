@@ -16,23 +16,39 @@ import { BUILD_QUEUE, createBuildQueue } from './infrastructure/bullmq/build-que
 import { BullMqDispatcher } from './infrastructure/bullmq/bullmq-dispatcher';
 import { BullMqBuildWorker } from './infrastructure/bullmq/bullmq-build-worker';
 import { DATABASE_URL } from '../sites/infrastructure/postgres-site.repository';
+import { HealthModule } from '../health/health.module';
+import { ReadinessState } from '../health/readiness-state';
 
 // ASTROPRESS_BUILDS engine axis (file default | bullmq). ASTROPRESS_STORAGE'tan orthogonal.
 const engine = process.env.ASTROPRESS_BUILDS ?? 'file';
 
 // ASTROPRESS_STORAGE storage axis: postgres → PostgresEventStore; diğer (file/memory/sqlite) → FileEventStore.
+// H2: factory readiness sinyali yazar (boot-safe catch korunur). Named export: factory seam testi (spec karar 10).
 const storage = process.env.ASTROPRESS_STORAGE;
-const eventStoreProvider = storage === 'postgres'
+export const eventStoreProvider = storage === 'postgres'
   ? {
       provide: EVENT_STORE,
-      useFactory: async (url: string): Promise<EventStore> => {
+      useFactory: async (url: string, readiness: ReadinessState): Promise<EventStore> => {
         const store = new PostgresEventStore(url);
-        await store.init().catch((err) => new Logger('PostgresEventStore').warn(`init başarısız, devam: ${err.message}`));
+        try {
+          await store.init();
+          readiness.set('eventStore', true);
+        } catch (err) {
+          new Logger('PostgresEventStore').warn(`init başarısız, devam: ${err instanceof Error ? err.message : String(err)}`);
+          readiness.set('eventStore', false);
+        }
         return store;
       },
-      inject: [DATABASE_URL],
+      inject: [DATABASE_URL, ReadinessState],
     }
-  : { provide: EVENT_STORE, useFactory: (): EventStore => new FileEventStore(defaultEventsDir()) };
+  : {
+      provide: EVENT_STORE,
+      useFactory: (readiness: ReadinessState): EventStore => {
+        readiness.set('eventStore', true);
+        return new FileEventStore(defaultEventsDir());
+      },
+      inject: [ReadinessState],
+    };
 
 const engineProviders = engine === 'bullmq'
   ? [
@@ -47,6 +63,9 @@ const engineProviders = engine === 'bullmq'
     ];
 
 @Module({
+  // HealthModule explicit import: standalone BuildsModule boot'unda (builds.module.spec) @Global
+  // kayıtlı olmaz → ReadinessState çözülmez. AppModule'da çift import zararsız (Nest dedupe).
+  imports: [HealthModule],
   controllers: [BuildsController],
   providers: [
     { provide: BUILDS_FILE, useFactory: () => defaultBuildsFile() },

@@ -65,13 +65,11 @@ test('healthz: 200 ok (liveness, engine state\'inden bağımsız)', async () => 
   assert.deepEqual(await res.json(), { status: 'ok' });
 });
 
-test('readyz: file boot → 200 ready', async () => {
+test('readyz: file boot → 200 ready + component map', async () => {
   const base = await boot();
   const res = await fetch(`${base}/readyz`);
   assert.equal(res.status, 200);
-  const body = await res.json();
-  assert.equal(body.status, 'ready');
-  // Task 3'te builds wiring sonrası components deepEqual'e güçlendirilir.
+  assert.deepEqual(await res.json(), { status: 'ready', components: { eventStore: 'ready', buildEngine: 'ready' } });
 });
 
 test('token mode: healthz/readyz bearer\'sız 200 (public probe); sites perimeter intact (401)', async () => {
