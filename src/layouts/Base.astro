@@ -17,6 +17,7 @@ const switchHref = altHref || `${localePrefix(other(lang))}/`;
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="description" content={description} />
   <title>{title}</title>
 </head>
@@ -40,7 +41,7 @@ const switchHref = altHref || `${localePrefix(other(lang))}/`;
     <slot />
   </main>
   <footer class="site-foot">
-    <span set:html={t.footerManaged} />
+    <span>{t.footerManagedPre}<strong>AstroPress</strong>{t.footerManagedPost}</span>
     <span>{t.footerTagline}</span>
   </footer>
 </body>

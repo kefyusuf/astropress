@@ -76,3 +76,29 @@ test('cleanupAll: workspaceDir yok → no-op (brick yok)', () => {
   ws.cleanupAll();
   assert.ok(!fs.existsSync(dir));
 });
+
+// --- Issue #11: jobId doğrulama + kök sınırı ---
+
+test('create: ../ içeren jobId reddedilir (kabul kriteri)', () => {
+  const r = makeRoot();
+  const ws = makeWorkspace();
+  assert.throws(() => ws.create(r, '../evil'), /Geçersiz build job id/);
+  assert.throws(() => ws.create(r, '..\\evil'), /Geçersiz build job id/);
+  assert.throws(() => ws.create(r, 'a/b'), /Geçersiz build job id/);
+  assert.throws(() => ws.create(r, ''), /Geçersiz build job id/);
+  assert.throws(() => ws.create(r, 'x'.repeat(65)), /Geçersiz build job id/);
+  // kök dışına resolve eden biçimler de reddedilir (allowlist regex zaten keser; çift savunma)
+  assert.ok(!fs.existsSync(path.join(dir, 'evil')));
+});
+
+test('cleanup: geçersiz jobId throw ETMEZ (silme best-effort), kök dışına dokunmaz', () => {
+  const r = makeRoot();
+  const ws = makeWorkspace();
+  const outside = path.join(dir, 'evil');
+  fs.mkdirSync(outside, { recursive: true });
+  ws.cleanup('../evil');
+  assert.ok(fs.existsSync(outside), 'kök dışı dizin korunur');
+  ws.cleanup('a/b');
+  ws.cleanup('');
+  assert.ok(fs.existsSync(path.join(r, 'src')), 'root korunur');
+});

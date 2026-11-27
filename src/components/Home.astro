@@ -15,7 +15,7 @@ const alt = `${localePrefix(other(lang))}/`;
 <Base title={t.homeTitle} lang={lang} altHref={alt}>
   <section class="hero">
     <span class="kicker">{t.kicker}</span>
-    <h1 set:html={t.heroTitle} />
+    <h1>{t.heroTitlePre}<em>{t.heroTitleAccent}</em></h1>
     <p>{t.heroBody}</p>
   </section>
 
