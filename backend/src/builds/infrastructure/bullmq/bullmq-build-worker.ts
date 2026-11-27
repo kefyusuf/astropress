@@ -57,7 +57,13 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const all = await this.repo.findAll();
       for (const job of all) {
-        if (job.status === 'queued') {
+        if (job.status === 'running') {
+          // Tek-instance crash kurtarması: Redis'te job KARŞILIĞI YOK → yetim running
+          // interrupted edilir. Karşılığı VARSA başka replikanın aktif build'idir — DOKUNULMAZ
+          // (multi-replica fix, issue #12); kurtarmayı processor guard + stalled devralır.
+          const bullJob = await this.boundedGetJob(job.id);
+          if (!bullJob) await this.repo.save(job.markFailed('interrupted', new Date().toISOString()));
+        } else if (job.status === 'queued') {
           const bullJob = await this.boundedGetJob(job.id);
           if (!bullJob) await this.repo.save(job.markDispatchLost(new Date().toISOString()));
         }
