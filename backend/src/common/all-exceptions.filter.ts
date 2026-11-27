@@ -16,8 +16,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
-      const message = typeof body === 'string' ? body : ((body as Record<string, unknown>).message ?? exception.message);
-      res.status(status).json({ statusCode: status, message, path: req?.url });
+      // Nesne gövde (örn. readyz 503 readiness snapshot, ValidationPipe 400) BÜTÜN olarak
+      // korunur — Nest default davranışıyla aynı sözleşme; yalnız string mesaj zarfa girer.
+      if (typeof body === 'object' && body !== null) {
+        res.status(status).json(body);
+        return;
+      }
+      res.status(status).json({ statusCode: status, message: body, path: req?.url });
       return;
     }
 
