@@ -48,6 +48,12 @@ export function update({ collection, slug, title, excerpt, body, seoTitle, seoDe
   const wantsCommerce = price !== undefined || stock !== undefined;
   if (wantsCommerce) deny(actor, perms, 'commerce', collection + '/' + slug);
   const { data, body: oldBody } = store.readContent(collection, slug);
+  // Yayındaki kaydın İÇERİK düzenlemesi otomatik inceleme revizyonuna düşer: değişiklik
+  // onay akışına (request_publish → approve) bağlanır; fiyat/stok güncellemesi yayın bozmaz.
+  const contentEdited = title !== undefined || excerpt !== undefined || body !== undefined ||
+    seoTitle !== undefined || seoDesc !== undefined || lang !== undefined || translationOf !== undefined;
+  const wasPublished = data.status === 'published';
+  if (wasPublished && contentEdited) data.status = 'review';
   if (title !== undefined) data.title = title;
   if (excerpt !== undefined) data.excerpt = excerpt;
   if (seoTitle !== undefined) data.seoTitle = seoTitle;
@@ -55,27 +61,48 @@ export function update({ collection, slug, title, excerpt, body, seoTitle, seoDe
   if (lang !== undefined) data.lang = normalizeLang(lang);
   if (translationOf !== undefined) data.translationOf = translationOf;
   if (collection === 'products' && wantsCommerce) {
-    if (price !== undefined) data.price = Number(price);
-    if (stock !== undefined) data.stock = Number(stock);
+    // YAML .nan/.inf ve negatif değerler: sayısal doğrulama yazım öncesinde.
+    for (const [k, v] of [['price', price], ['stock', stock]]) {
+      if (v === undefined) continue;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) throw new Error('Geçersiz ' + k + ' (negatif veya sonlu olmayan değer)');
+      data[k] = n;
+    }
   }
   store.writeContent(collection, slug, data, body !== undefined ? body : oldBody);
   store.audit(actor, 'update_content', collection + '/' + slug);
-  return { slug, status: data.status };
+  if (wasPublished && contentEdited) store.audit(actor, 'update_published_review', collection + '/' + slug);
+  return {
+    slug,
+    status: data.status,
+    ...(wasPublished && contentEdited ? { note: 'Yayındaki kayıt inceleme revizyonuna düşürüldü — yeniden yayın için request_publish + approve gerekir.' } : {}),
+  };
 }
 
 export function remove({ collection, slug }, actor = 'agent', perms) {
   deny(actor, perms, 'delete', collection + '/' + slug);
+  // Yayındaki kayıt delete yetkisiyle silinemez: insan onayı (publish) gerekir.
+  const { data } = store.readContent(collection, slug);
+  if (data.status === 'published') deny(actor, perms, 'publish', 'silme ' + collection + '/' + slug);
   store.deleteContent(collection, slug);
   store.audit(actor, 'delete_content', collection + '/' + slug);
   return { deleted: collection + '/' + slug };
 }
 
-export function requestPublish({ collection, slug }, actor = 'agent') {
+export function requestPublish({ collection, slug }, actor = 'agent', perms) {
+  deny(actor, perms, 'edit', collection + '/' + slug);
   const { data } = store.readContent(collection, slug);
   if (data.status === 'published') return { note: 'Zaten yayında.' };
   const tasks = store.readJSON('tasks.json', []);
+  const pending = tasks.find((t) => t.status === 'approval' && t.collection === collection && t.slug === slug);
+  if (pending) return { taskId: pending.id, status: 'approval', note: 'Bu kayıt için bekleyen onay görevi zaten var.' };
   const id = 'task-' + (tasks.length + 1) + '-' + Date.now().toString(36);
-  tasks.push({ id, collection, slug, title: data.title, status: 'approval', ts: new Date().toISOString() });
+  tasks.push({
+    id, collection, slug, title: data.title, status: 'approval', ts: new Date().toISOString(),
+    requestedBy: actor,
+    // TOCTOU (bait-and-switch) koruması: onay sırasında içerik değişmişse approve reddeder.
+    contentHash: store.contentHash(collection, slug),
+  });
   store.writeJSON('tasks.json', tasks);
   store.audit(actor, 'request_publish', collection + '/' + slug);
   return { taskId: id, status: 'approval' };
@@ -89,6 +116,11 @@ export function approve({ taskId }, actor = 'human', perms) {
   const t = tasks.find((x) => x.id === taskId);
   if (!t) throw new Error('Görev yok: ' + taskId);
   if (t.status !== 'approval') throw new Error('Görev onay beklemiyor: ' + t.status);
+  // Bait-and-switch: onay isteğinden sonra içerik değiştiyse yayınlanmaz.
+  if (t.contentHash && store.contentHash(t.collection, t.slug) !== t.contentHash) {
+    store.audit(actor, 'approve_task', t.collection + '/' + t.slug + ' hash-uyumsuz');
+    throw new Error('İçerik onay isteğinden sonra değişti — görevi reddedin ve yeniden isteyin: ' + taskId);
+  }
   const { data, body } = store.readContent(t.collection, t.slug);
   data.status = 'published';
   store.writeContent(t.collection, t.slug, data, body);
@@ -103,6 +135,7 @@ export function reject({ taskId }, actor = 'human', perms) {
   const tasks = store.readJSON('tasks.json', []);
   const t = tasks.find((x) => x.id === taskId);
   if (!t) throw new Error('Görev yok: ' + taskId);
+  if (t.status !== 'approval') throw new Error('Görev onay beklemiyor: ' + t.status);
   t.status = 'rejected';
   store.writeJSON('tasks.json', tasks);
   store.audit(actor, 'reject_task', t.collection + '/' + t.slug);
@@ -114,7 +147,8 @@ export function tasks({ status } = {}) {
   return status ? all.filter((t) => t.status === status) : all;
 }
 
-export function build(actor = 'agent') {
+export function build(actor = 'agent', perms) {
+  deny(actor, perms, 'build', 'astro build');
   // astro CLI entry versiyonla değişir (5: astro.js, 7: bin/astro.mjs) → package.json bin'den çöz.
   const astroPkg = require('astro/package.json');
   const binRel = typeof astroPkg.bin === 'string' ? astroPkg.bin : astroPkg.bin.astro;
@@ -127,6 +161,5 @@ export function build(actor = 'agent') {
 }
 
 export function audit({ limit } = {}) {
-  const log = store.readJSON('audit.json', []);
-  return log.slice(-(limit || 20));
+  return store.readAudit(limit || 20);
 }

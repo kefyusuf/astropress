@@ -158,14 +158,14 @@ async function api(req, res, url) {
     if (method === 'PUT') return sendJson(res, 200, ops.update({ ...body, collection, slug }, 'human', HP));
     if (method === 'DELETE') return sendJson(res, 200, ops.remove({ collection, slug }, 'human', HP));
   }
-  if (p === '/api/publish' && method === 'POST') return sendJson(res, 200, ops.requestPublish(body, 'human'));
+  if (p === '/api/publish' && method === 'POST') return sendJson(res, 200, ops.requestPublish(body, 'human', HP));
   if (p === '/api/tasks' && method === 'GET') return sendJson(res, 200, ops.tasks({ status: q.get('status') || undefined }));
   if (seg[1] === 'tasks' && seg.length === 4 && method === 'POST') {
     const id = seg[2];
     if (seg[3] === 'approve') return sendJson(res, 200, ops.approve({ taskId: id }, 'human', HP));
     if (seg[3] === 'reject') return sendJson(res, 200, ops.reject({ taskId: id }, 'human', HP));
   }
-  if (p === '/api/build' && method === 'POST') return sendJson(res, 200, ops.build('human'));
+  if (p === '/api/build' && method === 'POST') return sendJson(res, 200, ops.build('human', HP));
   if (p === '/api/audit' && method === 'GET') return sendJson(res, 200, ops.audit({ limit: Number(q.get('limit')) || 50 }));
   if (p === '/api/agents' && method === 'GET') return sendJson(res, 200, listAgents());
   if (p === '/api/config' && method === 'GET') return sendJson(res, 200, { ...site, previewUrl: `http://127.0.0.1:${PREVIEW_PORT}/` });

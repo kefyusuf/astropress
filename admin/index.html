@@ -194,8 +194,8 @@
 
   async function renderAgents() {
     const agents = await api('/api/agents');
-    const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish'];
-    const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın' };
+    const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish', 'build'];
+    const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın', build: 'build' };
     main.innerHTML = `
       <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (kök agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
       <div class="table-wrap"><table>

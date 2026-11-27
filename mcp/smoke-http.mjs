@@ -7,9 +7,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { ROOT } from './store.mjs';
 
 // HTTP sunucusunu ephemeral port'ta spawn et; stdout'tan gerçek port'u parse et.
+// Token modu: smoke, auth'lu transport'u da exercise eder (issue #9).
+const SMOKE_TOKEN = 'smoke-mcp-token-0123456789';
 const child = spawn(process.execPath, ['mcp/http-server.mjs'], {
   cwd: ROOT,
-  env: { ...process.env, MCP_PORT: '0', HOST: '127.0.0.1' },
+  env: { ...process.env, MCP_PORT: '0', HOST: '127.0.0.1', MCP_BEARER_TOKEN: SMOKE_TOKEN },
 });
 let port;
 try {
@@ -31,7 +33,7 @@ try {
 
 const connect = async (agentId) => {
   const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-    requestInit: { headers: { 'X-Astropress-Agent': agentId } },
+    requestInit: { headers: { 'X-Astropress-Agent': agentId, Authorization: `Bearer ${SMOKE_TOKEN}` } },
   });
   const client = new Client({ name: 'astropress-smoke-http', version: '0.0.0' });
   await client.connect(transport);
@@ -114,14 +116,14 @@ try {
 
   // DELETE sonrası oturum kapanır (session map temizlenir) — spec §13.8.
   const dt = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`), {
-    requestInit: { headers: { 'X-Astropress-Agent': 'reader' } },
+    requestInit: { headers: { 'X-Astropress-Agent': 'reader', Authorization: `Bearer ${SMOKE_TOKEN}` } },
   });
   const dc = new Client({ name: 'astropress-smoke-http', version: '0.0.0' });
   await dc.connect(dt);
   const staleSid = dt.sessionId;
   await dt.terminateSession(); // DELETE gönderir → onclose → map temizliği (SDK 1.32.2: close() yalnız lokal abort)
   await dc.close(); // lokal temizlik — DELETE göndermez; terminateSession'dan SONRA olmalı (close, abort controller'ı iptal eder)
-  const stale = await fetch(`http://127.0.0.1:${port}/mcp`, { headers: { 'Mcp-Session-Id': staleSid } });
+  const stale = await fetch(`http://127.0.0.1:${port}/mcp`, { headers: { 'Mcp-Session-Id': staleSid, Authorization: `Bearer ${SMOKE_TOKEN}` } });
   check('HTTP DELETE cleanup: stale session rejected', stale.status === 400 || stale.status === 404);
 
   // reader delete reddi (stdio parity).
@@ -148,7 +150,7 @@ try {
       sock.on('data', (d) => { buf += d.toString(); if (buf.includes('\r\n\r\n')) { clearTimeout(timer); sock.destroy(); resolve(buf); } });
       sock.on('error', (e) => { clearTimeout(timer); reject(e); });
     });
-    const alive = await fetch(`http://127.0.0.1:${port}/mcp`);
+    const alive = await fetch(`http://127.0.0.1:${port}/mcp`, { headers: { Authorization: `Bearer ${SMOKE_TOKEN}` } });
     malformedHandled = raw.startsWith('HTTP/1.1 400') && alive.status === 400;
   } catch { malformedHandled = false; }
   check('HTTP malformed target → 400 + server alive', malformedHandled);

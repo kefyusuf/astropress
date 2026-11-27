@@ -31,7 +31,7 @@
     "admin": "node mcp/http.mjs",
     "smoke": "node mcp/smoke.mjs",
     "smoke:http": "node mcp/smoke-http.mjs",
-    "test": "node --test test/auth.test.mjs test/ops.test.mjs test/store.test.mjs test/http.admin.test.mjs",
+    "test": "node --test test/auth.test.mjs test/ops.test.mjs test/store.test.mjs test/http.admin.test.mjs test/http-server.test.mjs",
     "backend:ci": "npm --prefix backend ci && npm --prefix backend test",
     "ci": "npm run build && npm test && npm run smoke && npm run smoke:http && npm run backend:ci"
   },
