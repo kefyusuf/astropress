@@ -17,4 +17,4 @@ export function listAgents() {
 }
 
 // İnsan tüm yetkilere sahiptir; publish yetkisini approve_task üzerinden kullanır.
-export const HUMAN = { id: 'human', name: 'İnsan', perms: { create: true, edit: true, delete: true, commerce: true, publish: true } };
+export const HUMAN = { id: 'human', name: 'İnsan', perms: { create: true, edit: true, delete: true, commerce: true, publish: true, build: true } };

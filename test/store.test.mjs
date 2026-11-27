@@ -59,8 +59,12 @@ test('uniqueSlug: çakışmada artırır', () => {
   assert.equal(store.uniqueSlug('pages', 'tekil'), 'tekil-3');
 });
 
-test('audit: state dizinine yazar ve okur', () => {
+test('audit: append-only jsonl yazar ve okur', () => {
   store.audit('test', 'deneme', 'detay');
-  const log = store.readJSON('audit.json', []);
+  store.audit('test2', 'deneme2', 'detay2');
+  const log = store.readAudit(10);
   assert.ok(log.some((e) => e.actor === 'test' && e.action === 'deneme'));
+  assert.ok(log.some((e) => e.actor === 'test2' && e.action === 'deneme2'));
+  // Append-only: iki kayıt da duruyor (200-kayıt kırpma yok).
+  assert.ok(log.filter((e) => e.actor === 'test' || e.actor === 'test2').length >= 2);
 });
