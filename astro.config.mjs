@@ -1,4 +1,5 @@
 import { defineConfig } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 import { unified } from '@astrojs/markdown-remark';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeExternalLinks from 'rehype-external-links';
@@ -9,6 +10,9 @@ import rehypeExternalLinks from 'rehype-external-links';
 export default defineConfig({
   site: 'https://kozkahve.com',
   output: 'static',
+  // Prefetch: viewport'a giren internal linkler için hover'da fetch (issue #14).
+  prefetch: { prefetchAll: true },
+  integrations: [sitemap()],
   build: { inlineStylesheets: 'auto' },
   markdown: {
     processor: unified({

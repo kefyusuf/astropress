@@ -1,10 +1,14 @@
 ---
 import { getCollection } from 'astro:content';
 import EntryView from '../components/EntryView.astro';
-import { defaultLocale } from '../lib/site.config';
+import { locales, defaultLocale } from '../lib/site.config';
 import { langOf } from '../lib/i18n';
+
+// Rota çakışma koruması (issue #14): üst-segment blog/products/<locale>/404 vb. pages slug'ı
+// olarak kullanılamaz — aksi halde /blog/, /en/, /404 rotalarını ezer.
 export async function getStaticPaths() {
-  const pages = await getCollection('pages', (entry) => entry.data.status === 'published' && langOf(entry) === defaultLocale);
+  const RESERVED_TOP_SLUGS = new Set(['blog', 'products', '404', 'rss.xml', 'sitemap-index.xml', ...locales]);
+  const pages = await getCollection('pages', (entry) => entry.data.status === 'published' && langOf(entry) === defaultLocale && !RESERVED_TOP_SLUGS.has(entry.id));
   return pages.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
 }
 const { entry } = Astro.props;

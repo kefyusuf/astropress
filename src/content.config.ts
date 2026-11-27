@@ -26,8 +26,9 @@ const products = defineCollection({
   schema: z.object({
     ...base,
     type: z.literal('product').default('product'),
-    price: z.number().default(0),
-    stock: z.number().default(0),
+    // Negatif fiyat ve ondalık/negatif stok kabul edilmez (issue #14).
+    price: z.number().nonnegative().default(0),
+    stock: z.number().int().nonnegative().default(0),
   }),
 });
 

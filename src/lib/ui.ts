@@ -1,4 +1,4 @@
-import type { Locale } from './site.config';
+import { defaultLocale, type Locale } from './site.config';
 
 // UI metinleri locale'e bağlıdır (default-ness'e DEĞİL): kök dili flip olsa da
 // her sayfa kendi dilinin metnini gösterir. Mevcut TR/EN çıktısı birebir korunur.
@@ -65,7 +65,8 @@ export const ui: Record<Locale, Ui> = {
     heroTitleAccent: 'roasted right.',
     heroBody: 'Traceable supply from bean to cup; a separate roast profile for every batch. A fast, static store managed with agents, built on Astro.',
     featured: 'Featured beans',
-    productsCount: (n) => `${n} products · stock in sync`,
+    // İngilizce çoğullaştırma düzeltmesi (issue #14): "1 products" değil.
+    productsCount: (n) => (n === 1 ? '1 product · stock in sync' : `${n} products · stock in sync`),
     latest: 'Latest from the blog',
     coproduction: 'agent + human co-production',
     dateLocale: 'en-US',
@@ -75,3 +76,7 @@ export const ui: Record<Locale, Ui> = {
     stock: 'stock:',
   },
 };
+
+// ui[lang] fallback: paketi olmayan dil defaultLocale metinlerine düşer — yeni bir dil
+// sites.json'a eklendiğinde build çökmez (issue #14 kabul kriteri: 1/2/3+ dilde hatasız build).
+export const uiFor = (lang: Locale): Ui => ui[lang] ?? ui[defaultLocale];

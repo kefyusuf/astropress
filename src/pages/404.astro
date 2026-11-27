@@ -1,0 +1,12 @@
+---
+import Base from '../layouts/Base.astro';
+import { defaultLocale } from '../lib/site.config';
+const lang = defaultLocale;
+---
+<Base title="404 — Sayfa bulunamadı" lang={lang}>
+  <section class="hero">
+    <span class="kicker">404</span>
+    <h1>Sayfa bulunamadı</h1>
+    <p>Aradığınız sayfa taşınmış veya hiç var olmamış olabilir. <a href="/">Ana sayfaya dönün</a>.</p>
+  </section>
+</Base>

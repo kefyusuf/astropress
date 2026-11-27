@@ -1,11 +1,14 @@
 ---
 import { getCollection } from 'astro:content';
 import EntryView from '../../components/EntryView.astro';
-import { otherLocales } from '../../lib/site.config';
+import { otherLocales, locales } from '../../lib/site.config';
 import { langOf } from '../../lib/i18n';
+
+// Rota çakışma koruması (issue #14) — [slug].astro emsali.
 export async function getStaticPaths() {
+  const RESERVED_TOP_SLUGS = new Set(['blog', 'products', '404', 'rss.xml', 'sitemap-index.xml', ...locales]);
   const groups = await Promise.all(otherLocales.map(async (locale) => {
-    const pages = await getCollection('pages', (entry) => entry.data.status === 'published' && langOf(entry) === locale);
+    const pages = await getCollection('pages', (entry) => entry.data.status === 'published' && langOf(entry) === locale && !RESERVED_TOP_SLUGS.has(entry.id));
     return pages.map((entry) => ({ params: { locale, slug: entry.id }, props: { entry, locale } }));
   }));
   return groups.flat();

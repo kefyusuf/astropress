@@ -31,9 +31,10 @@
     "admin": "node mcp/http.mjs",
     "smoke": "node mcp/smoke.mjs",
     "smoke:http": "node mcp/smoke-http.mjs",
-    "test": "node --test test/auth.test.mjs test/ops.test.mjs test/store.test.mjs test/http.admin.test.mjs",
+    "test": "node --test test/auth.test.mjs test/ops.test.mjs test/store.test.mjs test/http.admin.test.mjs test/http-server.test.mjs",
     "backend:ci": "npm --prefix backend ci && npm --prefix backend test",
-    "ci": "npm run build && npm test && npm run smoke && npm run smoke:http && npm run backend:ci"
+    "ci": "npm run build && npm test && npm run smoke && npm run smoke:http && npm run backend:ci",
+    "check": "astro check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -41,8 +42,13 @@
     "gray-matter": "^4.0.3",
     "zod": "^4.6.7",
     "@astrojs/markdown-remark": "^7.3.10",
+    "@astrojs/rss": "^4.0.19",
+    "@astrojs/sitemap": "^3.7.6",
     "rehype-external-links": "^3.0.0",
     "rehype-sanitize": "^6.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "typescript": "^6.0.3"
+  }
 }
