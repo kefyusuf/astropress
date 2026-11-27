@@ -126,31 +126,24 @@ test('increment: window expire + block aktif → block key\'den blocked okunur',
   } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
 });
 
-// T3-a: atomic set-once (NX). Seam EVAL üzerinde (H1): Lua'da SET script içinde çalışır,
-// client-side set monkey-patch ölüdür. İkinci EVAL 250ms gecikir → block ilk script'te kurulmuş
-// olur; ikinci script frozen-branch'ten döner, block TTL RESET edilmez (NX set-once script içinde).
-test('increment: concurrent over-limit → block set-once (NX, ikinci SET TTL resetlemez)', { skip }, async (t) => {
+// T3-a: atomic set-once (NX). Lua'da SET script içinde çalışır — block kurulu iken ikinci
+// over-limit çağrısı 'SET ... NX' ile TTL'i RESET EDEMEZ (non-sliding). Seam-bağımsız ölçüm:
+// block kurulduktan sonra 100ms gerçek bekleme → TTL gözle görülür azalır; reset olsaydı
+// ~60000'e dönerdi. Atomiklik (eşzamanlı INCR kaybı yok) ayrı "20 concurrent" testinde.
+test('increment: over-limit block set-once (NX, block TTL reset edilmez)', { skip }, async (t) => {
   let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
   try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
   try {
     for (let i = 0; i < 3; i++) await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
     const blockKey = 'throttler:default:agent-nx:block';
-    const origEval: (...args: any[]) => Promise<unknown> = ctx.redis.eval.bind(ctx.redis);
-    let evalCalls = 0;
-    // Test seam: over-limit EVAL'lerini sıralı hale getir (ikincisi 250ms geç) — yarış penceresi ölçülebilir.
-    (ctx.redis as any).eval = (...args: any[]) => {
-      evalCalls++;
-      if (evalCalls === 2) return new Promise((r) => setTimeout(r, 250)).then(() => origEval(...args));
-      return origEval(...args);
-    };
-    const [r1, r2] = await Promise.all([
-      ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default'),
-      ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default'),
-    ]);
-    assert.equal(r1.isBlocked, true);
-    assert.equal(r2.isBlocked, true);
-    const ttl = await ctx.redis.pttl(blockKey);
-    assert.ok(ttl > 0 && ttl <= 60000 - 150, `ikinci SET block TTL'ini resetlememeli (NX set-once): ${ttl}`);
+    const ttlBefore = await ctx.redis.pttl(blockKey);
+    assert.ok(ttlBefore > 0, 'over-limit hit block key kurmalı');
+    await new Promise((r) => setTimeout(r, 100));
+    const retry = await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
+    assert.equal(retry.isBlocked, true);
+    const ttlAfter = await ctx.redis.pttl(blockKey);
+    assert.ok(ttlAfter > 0 && ttlAfter < ttlBefore, `block TTL resetlenmemeli (NX set-once): before=${ttlBefore} after=${ttlAfter}`);
+    assert.ok(ttlAfter < 60000, `block TTL tam blockDuration\u2019a dönmemeli (set-once): ${ttlAfter}`);
   } finally { await ctx.redis.flushdb(); ctx.redis.disconnect(); }
 });
 
