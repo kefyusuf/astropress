@@ -22,6 +22,8 @@ const aboutHref = `${localePrefix(lang)}/${t.aboutSlug}/`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const langLinks = links ?? homeHrefs(lang);
 const multiLang = locales.length > 1;
+// aria-current="page": prerender sırasında pathname bilinir (index.html soneki normalize).
+const path = Astro.url.pathname.replace(/index\.html$/, '');
 
 // Sayfa bazlı JSON-LD + site-geneli WebSite/Organization.
 // </script> breakout koruması: JSON içindeki '<' unicode-escape edilir (issue #14).
@@ -59,14 +61,15 @@ if (jsonLd) jsonLdAll.push(jsonLd);
   {jsonLdAll.map((obj) => <script type="application/ld+json" set:html={safeJson(obj)} />)}
 </head>
 <body>
+  <a class="skip-link" href="#main-content">İçeriğe atla</a>
   <header class="site-head">
     <a class="brand" href={home}>
-      <span class="brand-mark">☕</span> {siteConfig.name}
+      <span class="brand-mark" aria-hidden="true">☕</span> {siteConfig.name}
     </a>
-    <nav>
-      <a href={home}>{t.shop}</a>
+    <nav aria-label="Ana menü">
+      <a href={home} aria-current={path === home || path === '/' ? 'page' : undefined}>{t.shop}</a>
       <a href={home + '#blog'}>Blog</a>
-      <a href={aboutHref}>{t.about}</a>
+      <a href={aboutHref} aria-current={path === aboutHref ? 'page' : undefined}>{t.about}</a>
       {multiLang && (
         <span class="lang-switch">
           {langLinks.map((l) => l.active
@@ -76,7 +79,7 @@ if (jsonLd) jsonLdAll.push(jsonLd);
       )}
     </nav>
   </header>
-  <main class="wrap">
+  <main class="wrap" id="main-content">
     <slot />
   </main>
   <footer class="site-foot">
