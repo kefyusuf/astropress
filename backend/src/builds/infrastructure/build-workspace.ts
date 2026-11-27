@@ -1,19 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { resolveRepoRoot } from '../../infrastructure/repo-root';
 
 export const BUILD_WORKSPACE_DIR = Symbol('BUILD_WORKSPACE_DIR');
 
 // ASTROPRESS_STATE/build-workspaces (varsa) yoksa repo kökü .astropress/build-workspaces (defaultEventsDir emsali).
 export function defaultWorkspaceDir(): string {
   if (process.env.ASTROPRESS_STATE) return path.join(process.env.ASTROPRESS_STATE, 'build-workspaces');
-  let dir = __dirname;
-  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return path.join(dir, '.astropress', 'build-workspaces');
+  return path.join(resolveRepoRoot(), '.astropress', 'build-workspaces');
 }
 
 // dir → junction (win32, admin gerektirmez) / dir symlink (POSIX). node_modules read-only paylaşım.

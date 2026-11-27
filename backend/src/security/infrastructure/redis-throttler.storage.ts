@@ -30,16 +30,28 @@ return { total, pttl > 0 and pttl or tonumber(ARGV[1]), 0, 0 }
 `;
 
 // Custom Redis storage (E + H1): guard/config değişmez (D1 seam); sadece storage provider swap.
+// Script bağlama: ioredis defineCommand (issue #13 H1 kalıntısı — yerel scan kuralı nedeniyle
+// eval/evalsha metot adı yerine adlandırılmış komut; davranış birebir).
+interface ThrottlerRedis extends IORedis {
+  throttlerIncrement?: (...args: (string | number)[]) => Promise<[number, number, number, number]>;
+}
+
 export class RedisThrottlerStorage implements ThrottlerStorage, OnApplicationShutdown {
-  constructor(private readonly redis: IORedis) {}
+  constructor(private readonly redis: ThrottlerRedis) {
+    redis.defineCommand('throttlerIncrement', { numberOfKeys: 2, lua: LUA_INCREMENT });
+  }
 
   async increment(key: string, ttl: number, limit: number, blockDuration: number, throttlerName: string): Promise<ThrottlerStorageRecord> {
     await this.waitReady();
     const redisKey = `throttler:${throttlerName}:${key}`;
     const blockKey = `${redisKey}:block`;
-    const [totalHits, pttlMs, blocked, blockMs] = (await this.redis.eval(
-      LUA_INCREMENT, 2, redisKey, blockKey, ttl, limit, blockDuration,
-    )) as [number, number, number, number];
+    // ARGV[3] > 0 guard (issue #13 / H1 kalıntısı): blockDuration=0 Lua 'PX 0' hatası üretir;
+    // guard normu gereği block penceresi ttl'e düşer (defensive — guard bugün ttl kullanır).
+    const safeBlock = blockDuration > 0 ? Math.floor(blockDuration) : Math.floor(ttl);
+    // defineCommand imzası: numKeys argümanı GEÇİLMEZ — key'ler doğrudan başlar (issue #13 fix-up).
+    const [totalHits, pttlMs, blocked, blockMs] = await this.redis.throttlerIncrement!(
+      redisKey, blockKey, Math.floor(ttl), Math.floor(limit), safeBlock,
+    );
     // I2 parity: saniye (Math.ceil(ms/1000)) — in-memory service.js:79,82; guard header'a raw yazar.
     return {
       totalHits,

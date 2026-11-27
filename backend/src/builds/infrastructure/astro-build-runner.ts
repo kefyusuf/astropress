@@ -1,23 +1,17 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { BuildResult } from '../domain/build-job';
 import { BuildRunner } from '../application/ports';
 import { BuildWorkspace } from './build-workspace';
+import { resolveRepoRoot } from '../../infrastructure/repo-root';
 
 export const ASTROPRESS_ROOT = Symbol('ASTROPRESS_ROOT');
 
-// Repo kökü: __dirname'den astro.config.mjs işaretçisine yürü (cwd/dist derinliğinden bağımsız).
+// Repo kökü tek kaynaktan: resolveRepoRoot (issue #13 — 8 dosyadaki tekrarlanan walk temizlendi).
 export function defaultRoot(): string {
-  let dir = __dirname;
-  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return dir;
+  return resolveRepoRoot();
 }
 
 const TIMEOUT_MS = 180000; // ops.mjs build parity
