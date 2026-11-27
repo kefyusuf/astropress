@@ -134,7 +134,8 @@ test('increment: over-limit block set-once (NX, block TTL reset edilmez)', { ski
   let ctx: { storage: RedisThrottlerStorage; redis: IORedis } | null = null;
   try { ctx = await freshStorage(); } catch (e) { if (e instanceof SkipTest) { t.skip(e.message); return; } throw e; }
   try {
-    for (let i = 0; i < 3; i++) await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
+    // limit=3 → block 4. çağrıda kurulur (total > limit).
+    for (let i = 0; i < 4; i++) await ctx.storage.increment('agent-nx', 60000, 3, 60000, 'default');
     const blockKey = 'throttler:default:agent-nx:block';
     const ttlBefore = await ctx.redis.pttl(blockKey);
     assert.ok(ttlBefore > 0, 'over-limit hit block key kurmalı');
