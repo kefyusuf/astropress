@@ -9,6 +9,7 @@ import { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../../src/app.module';
+import { configureApp } from '../../src/app-config';
 import { BUILD_RUNNER } from '../../src/builds/application/ports';
 import { FakeBuildRunner } from '../builds/fake-build-runner';
 
@@ -27,9 +28,13 @@ const orig = {
   sitesFile: process.env.ASTROPRESS_SITES_FILE,
   agents: process.env.ASTROPRESS_AGENTS_FILE,
   rateLimit: process.env.ASTROPRESS_RATE_LIMIT,
+  readRateLimit: process.env.ASTROPRESS_READ_RATE_LIMIT,
+  allowedHosts: process.env.ASTROPRESS_ALLOWED_HOSTS,
   allowAnyHost: process.env.ASTROPRESS_ALLOW_ANY_HOST,
   redisUrl: process.env.REDIS_URL,
   auth: process.env.ASTROPRESS_AUTH,
+  nodeEnv: process.env.NODE_ENV,
+  trustProxy: process.env.TRUST_PROXY,
 };
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
@@ -39,9 +44,13 @@ afterEach(async () => {
     ASTROPRESS_SITES_FILE: orig.sitesFile,
     ASTROPRESS_AGENTS_FILE: orig.agents,
     ASTROPRESS_RATE_LIMIT: orig.rateLimit,
+    ASTROPRESS_READ_RATE_LIMIT: orig.readRateLimit,
+    ASTROPRESS_ALLOWED_HOSTS: orig.allowedHosts,
     ASTROPRESS_ALLOW_ANY_HOST: orig.allowAnyHost,
     REDIS_URL: orig.redisUrl,
     ASTROPRESS_AUTH: orig.auth,
+    NODE_ENV: orig.nodeEnv,
+    TRUST_PROXY: orig.trustProxy,
   };
   for (const [key, val] of Object.entries(restore)) {
     if (val === undefined) delete process.env[key];
@@ -49,8 +58,9 @@ afterEach(async () => {
   }
 });
 
-// main.ts production parser config'ini replike eder (spec §8): AppModule-boot testleri main.ts'yi görmez.
-async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number; runner?: FakeBuildRunner; auth?: 'header' | 'token'; tokens?: Record<string, string> } = {}): Promise<string> {
+// main.ts üretim konfigürasyonu artık tek kaynak: configureApp (spec §8 güncel — helmet,
+// ValidationPipe, trust proxy test altında; issue #10).
+async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number; readLimit?: number; runner?: FakeBuildRunner; auth?: 'header' | 'token'; authRaw?: string; tokens?: Record<string, string> } = {}): Promise<string> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'astropress-perimeter-'));
   process.env.ASTROPRESS_STATE = dir;
   // Sites file adapter ASTROPRESS_SITES_FILE ile izole edilir (sites.http.spec.ts emsali);
@@ -59,7 +69,8 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   const agentsFile = path.join(dir, 'agents.json');
   fs.writeFileSync(agentsFile, JSON.stringify(opts.agents ?? DEFAULT_AGENTS), 'utf8');
   process.env.ASTROPRESS_AGENTS_FILE = agentsFile;
-  if (opts.auth) process.env.ASTROPRESS_AUTH = opts.auth;
+  if (opts.authRaw !== undefined) process.env.ASTROPRESS_AUTH = opts.authRaw;
+  else if (opts.auth) process.env.ASTROPRESS_AUTH = opts.auth;
   else delete process.env.ASTROPRESS_AUTH;
   if (opts.tokens) {
     const { hashToken } = await import('../../src/security/application/token-store');
@@ -69,6 +80,8 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   }
   if (opts.rateLimit !== undefined) process.env.ASTROPRESS_RATE_LIMIT = String(opts.rateLimit);
   else delete process.env.ASTROPRESS_RATE_LIMIT;
+  if (opts.readLimit !== undefined) process.env.ASTROPRESS_READ_RATE_LIMIT = String(opts.readLimit);
+  else delete process.env.ASTROPRESS_READ_RATE_LIMIT;
   // Perimeter testleri guard davranışını doğrular (storage-agnostic): her boot taze in-memory
   // throttler ister. Ambient REDIS_URL Redis storage'ı boot'lar arası kalıcı yapar → state leak.
   // Redis STORAGE doğruluğu ayrı redis-throttler.spec.ts'de (flushdb izolasyonlu) test edilir.
@@ -79,7 +92,7 @@ async function boot(opts: { agents?: Record<string, unknown>; rateLimit?: number
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
   // Kasıtlı 413 (PayloadTooLargeError, HttpException değil) Nest ExceptionsHandler ERROR log'u basar → test çıktısı pristine kalsın.
   app.useLogger(false);
-  app.useBodyParser('json', { limit: '1mb' });
+  configureApp(app);
   await app.listen(0);
   const port = (app.getHttpServer().address() as AddressInfo).port;
   cleanup = async () => { await app.close(); fs.rmSync(dir, { recursive: true, force: true }); };
@@ -280,4 +293,65 @@ test('token mode: empty store → boot-safe, all 401', async () => {
   const url = await boot({ auth: 'token' });
   const res = await send(`${url}/sites`, 'GET', undefined, undefined, 'astro_any');
   assert.equal(res.status, 401);
+});
+
+// --- Issue #10: fail-fast, IPv6 host, allowed hosts, hardening başlıkları, domain 400, read limit ---
+
+test('auth fail-fast: NODE_ENV=production + header modu reddedilir', async () => {
+  process.env.NODE_ENV = 'production';
+  process.env.ASTROPRESS_AUTH = 'header';
+  await assert.rejects(() => boot(), /production/);
+});
+
+test('auth fail-fast: bilinmeyen ASTROPRESS_AUTH değeri reddedilir', async () => {
+  await assert.rejects(() => boot({ authRaw: 'oauth' }), /Bilinmeyen ASTROPRESS_AUTH/);
+});
+
+test('rate-limit: negatif ASTROPRESS_RATE_LIMIT boot\u2019u öldürür (sessiz kilit yok)', async () => {
+  await assert.rejects(() => boot({ rateLimit: -5 }), /pozitif tam sayı/);
+});
+
+test('host: [::1]evil.com IPv6 bypass → 403 (kabul kriteri)', async () => {
+  const url = await boot();
+  assert.equal(await rawStatus(url, '[::1]evil.com'), 403);
+});
+
+test('host: [::1]:port geçerli IPv6 → 200', async () => {
+  const url = await boot();
+  assert.equal(await rawStatus(url, `[::1]:${Number(new URL(url).port)}`), 200);
+});
+
+test('host: ASTROPRESS_ALLOWED_HOSTS ile ek domain → 200', async () => {
+  process.env.ASTROPRESS_ALLOWED_HOSTS = 'kahve.example.com,api.internal:8080';
+  const url = await boot();
+  assert.equal(await rawStatus(url, 'kahve.example.com'), 200);
+  assert.equal(await rawStatus(url, 'api.internal:8080'), 200);
+  assert.equal(await rawStatus(url, 'other.example.com'), 403);
+});
+
+test('hardening: x-powered-by yok, nosniff var (helmet + configureApp)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'GET');
+  assert.equal(res.headers.get('x-powered-by'), null);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+});
+
+test('domain: name:123 → 500 değil 400 (kabul kriteri)', async () => {
+  const url = await boot();
+  const res = await send(`${url}/sites`, 'POST', { id: 'kahve', name: 123, locales: ['tr'], defaultLocale: 'tr' });
+  assert.equal(res.status, 400);
+});
+
+test('domain: body null → 500 değil 400 (kabul kriteri)', async () => {
+  const url = await boot();
+  const res = await fetch(`${url}/sites`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'null' });
+  assert.equal(res.status, 400);
+});
+
+test('rate-limit: GET ayrı okuma limiti (readLimit=3 → 4. GET 429)', async () => {
+  const url = await boot({ readLimit: 3 });
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await send(`${url}/sites`, 'GET', undefined, 'reader')).status, 200);
+  }
+  assert.equal((await send(`${url}/sites`, 'GET', undefined, 'reader')).status, 429);
 });

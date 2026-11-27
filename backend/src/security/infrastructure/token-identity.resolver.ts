@@ -6,6 +6,11 @@ import { UnknownAgentError } from '../domain/errors';
 import { Agent } from '../domain/agent';
 import { AgentRequest } from '../interface/agent-request';
 
+const UNAUTHORIZED_MESSAGE = 'Yetkisiz: geçerli bir bearer token gerekli';
+
+// Sıkı bearer biçimi: 'Bearer <token>' — sondaki/öndeki boşluklara izin yok (issue #10).
+const BEARER_PATTERN = /^Bearer\s+(\S+)\s*$/i;
+
 // Token mode (Faz-2+): Authorization: Bearer → sha256 → TokenStore → registry. Fail-closed, fallback YOK.
 @Injectable()
 export class TokenIdentityResolver implements IdentityResolver {
@@ -14,14 +19,14 @@ export class TokenIdentityResolver implements IdentityResolver {
   async resolve(req: AgentRequest): Promise<Agent> {
     const header = req.headers['authorization'];
     const value = typeof header === 'string' ? header : '';
-    const match = /^Bearer (.+)$/i.exec(value);
-    if (!match) throw new UnauthorizedException('Geçersiz veya eksik bearer token');
+    const match = value.match(BEARER_PATTERN);
+    if (!match) throw new UnauthorizedException(UNAUTHORIZED_MESSAGE);
     const agentId = await this.store.findAgentByHash(hashToken(match[1].trim()));
-    if (!agentId) throw new UnauthorizedException('Bilinmeyen token');
+    if (!agentId) throw new UnauthorizedException(UNAUTHORIZED_MESSAGE);
     try {
       return await this.registry.getAgent(agentId);
     } catch (err) {
-      if (err instanceof UnknownAgentError) throw new UnauthorizedException(err.message);
+      if (err instanceof UnknownAgentError) throw new UnauthorizedException(UNAUTHORIZED_MESSAGE);
       throw err;
     }
   }
