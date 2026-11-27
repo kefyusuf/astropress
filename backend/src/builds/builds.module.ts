@@ -18,6 +18,7 @@ import { BullMqBuildWorker } from './infrastructure/bullmq/bullmq-build-worker';
 import { DATABASE_URL } from '../sites/infrastructure/postgres-site.repository';
 import { HealthModule } from '../health/health.module';
 import { ReadinessState } from '../health/readiness-state';
+import { positiveIntEnv } from './infrastructure/builds-env';
 
 // ASTROPRESS_BUILDS engine axis (file default | bullmq). ASTROPRESS_STORAGE'tan orthogonal.
 const engine = process.env.ASTROPRESS_BUILDS ?? 'file';
@@ -73,9 +74,10 @@ const engineProviders = engine === 'bullmq'
     BuildWorkspace,
     { provide: ASTROPRESS_ROOT, useFactory: () => defaultRoot() },
     { provide: DATABASE_URL, useFactory: () => process.env.DATABASE_URL || '' },
-    { provide: BUILD_QUEUE_LIMIT, useFactory: () => Number(process.env.ASTROPRESS_BUILD_QUEUE_LIMIT) || 10 },
-    { provide: BUILD_RETENTION, useFactory: () => Number(process.env.ASTROPRESS_BUILD_RETENTION) || 50 },
-    { provide: BUILD_CONCURRENCY, useFactory: () => Number(process.env.ASTROPRESS_BUILD_CONCURRENCY) || 1 },
+    // Runtime pozitif tam sayı doğrulama (issue #12): negatif/NaN fail-fast.
+    { provide: BUILD_QUEUE_LIMIT, useFactory: () => positiveIntEnv('ASTROPRESS_BUILD_QUEUE_LIMIT', 10) },
+    { provide: BUILD_RETENTION, useFactory: () => positiveIntEnv('ASTROPRESS_BUILD_RETENTION', 50) },
+    { provide: BUILD_CONCURRENCY, useFactory: () => positiveIntEnv('ASTROPRESS_BUILD_CONCURRENCY', 1) },
     eventStoreProvider,
     { provide: BUILD_JOB_REPOSITORY, useClass: EventSourcedBuildJobRepository },
     { provide: BUILD_RUNNER, useClass: AstroBuildRunner },
