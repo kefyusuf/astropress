@@ -7,6 +7,7 @@ import { BUILD_RETENTION } from '../../application/build-worker';
 import { BUILD_QUEUE_NAME, BUILD_QUEUE } from './build-queue';
 import { REDIS_URL, createRedisConnection } from '../../../infrastructure/redis-connection';
 import { ReadinessState } from '../../../health/readiness-state';
+import { positiveIntEnv } from '../builds-env';
 
 @Injectable()
 export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
@@ -33,24 +34,35 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
       this.worker = new Worker(BUILD_QUEUE_NAME, (job) => this.process(job), {
         connection: this.connection,
         concurrency: this.concurrency, // N (Redis job-lock native claim; N=1 serial parity)
+        // lockDuration ≥ build süresi (issue #12): default 30s, 180s build'te lock düşer ve
+        // aynı build çakışırdı. ASTROPRESS_BUILD_LOCK_DURATION ile yapılandırılır (default 240s).
+        lockDuration: positiveIntEnv('ASTROPRESS_BUILD_LOCK_DURATION', 240000),
         maxStalledCount: 1,
         stalledInterval: 30000,
       });
       this.worker.on('error', (err) => this.logger.warn(`bullmq worker error: ${err.message}`));
+      // failed/stalled görünürlüğü (issue #12): sessiz kayıp yok — structured warn.
+      this.worker.on('failed', (job, err) => this.logger.warn(`bullmq job failed: ${job?.id ?? '?'} ${err.message}`));
+      this.worker.on('stalled', (jobId) => this.logger.warn(`bullmq job stalled: ${String(jobId)}`));
       // H2 boot promise: 'ready' bounded await → listen worker bağlıyken döner (Redis-up deterministik).
       await this.waitWorkerReady();
     } catch (err) {
       ok = false;
       this.logger.warn(`bullmq worker init başarısız, devam ediliyor: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // Boot recover parity (spec §7): stale running mirror → failed interrupted (BuildWorker.recover emsali).
-    // Best-effort: repo hatası boot'u brick ETMEZ (Redis-down dahil). Processor running-guard ile idempotent:
-    // recover failed yazarsa processor terminal skip eder; interrupted running asla re-run edilmez.
+    // Boot recover (issue #12 — multi-replica fix): RUNNING job'lara DOKUNULMAZ. Eski davranış
+    // yeni kalkan replikanın diğer instance'lardaki aktif build'lerini interrupted yapıyordu;
+    // artık BullMQ stalled mekanizması + job-lock sahipliği kurtarır. Yalnız REPLICASIZ
+    // dispatch-lost temizliği (queued ve Redis'te karşılığı yok → mirror düzeltilir) kalır.
     try {
       const all = await this.repo.findAll();
       for (const job of all) {
         if (job.status === 'running') {
-          await this.repo.save(job.markFailed('interrupted', new Date().toISOString()));
+          // Tek-instance crash kurtarması: Redis'te job KARŞILIĞI YOK → yetim running
+          // interrupted edilir. Karşılığı VARSA başka replikanın aktif build'idir — DOKUNULMAZ
+          // (multi-replica fix, issue #12); kurtarmayı processor guard + stalled devralır.
+          const bullJob = await this.boundedGetJob(job.id);
+          if (!bullJob) await this.repo.save(job.markFailed('interrupted', new Date().toISOString()));
         } else if (job.status === 'queued') {
           const bullJob = await this.boundedGetJob(job.id);
           if (!bullJob) await this.repo.save(job.markDispatchLost(new Date().toISOString()));
@@ -92,7 +104,14 @@ export class BullMqBuildWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.worker) await this.worker.close().catch(() => {});
+    // Bounded shutdown (issue #12): worker.close() 10sn'yi aşarsa zorla devam — SIGTERM
+    // temiz kapanmalı; aktif build controller'lı sonlanır (runner timeout'u var).
+    if (this.worker) {
+      await Promise.race([
+        this.worker.close().catch(() => {}),
+        new Promise((r) => setTimeout(r, 10000).unref()),
+      ]);
+    }
     // Worker'ın main connection'ı shared (caller-owned) → worker.close() disconnect etmez; biz ederiz.
     // (blockingConnection duplicate'i shared:false olduğundan worker.close() onu zaten kapatır.)
     this.connection?.disconnect();

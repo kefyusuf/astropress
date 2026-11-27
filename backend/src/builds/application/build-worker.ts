@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { BuildJob } from '../domain/build-job';
 import { BUILD_JOB_REPOSITORY, BUILD_RUNNER, BUILD_CONCURRENCY, BuildJobRepository, BuildRunner, BuildDispatcher } from './ports';
 import { ReadinessState } from '../../health/readiness-state';
@@ -6,10 +6,11 @@ import { ReadinessState } from '../../health/readiness-state';
 export const BUILD_RETENTION = Symbol('BUILD_RETENTION');
 
 @Injectable()
-export class BuildWorker implements OnModuleInit, BuildDispatcher {
+export class BuildWorker implements OnModuleInit, OnModuleDestroy, BuildDispatcher {
   private readonly logger = new Logger(BuildWorker.name);
   private drainPromise: Promise<void> | null = null;
   private readonly claimed = new Set<string>();
+  private stopping = false;
 
   constructor(
     @Inject(BUILD_JOB_REPOSITORY) private readonly repo: BuildJobRepository,
@@ -90,14 +91,33 @@ export class BuildWorker implements OnModuleInit, BuildDispatcher {
 
   // Atomik claim: findAll await sonrası SYNC filter+add (arada await yok) → iki loop aynı job'ı seçemez.
   private async claimNext(): Promise<BuildJob | null> {
+    if (this.stopping) return null; // shutdown: yeni claim yok (issue #12)
     const all = await this.repo.findAll();
     const next = all
       .filter((j) => j.status === 'queued' && !this.claimed.has(j.id))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (!next) return null;
     this.claimed.add(next.id);
-    const running = next.markRunning(new Date().toISOString());
-    await this.repo.save(running);
-    return running;
+    try {
+      const running = next.markRunning(new Date().toISOString());
+      await this.repo.save(running);
+      return running;
+    } catch (err) {
+      // save başarısız → claimed Set sızıntısı + workerLoop ölümü yerine temiz bırak (issue #12).
+      this.claimed.delete(next.id);
+      throw err;
+    }
+  }
+
+  // Graceful shutdown (issue #12): yeni claim durdur; aktif build bounded beklenir.
+  // 10sn'yi aşan build'ler runner timeout'undan önce kontrollü biter; aşım zorla bırak.
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
+    if (this.drainPromise) {
+      await Promise.race([
+        this.drainPromise.catch(() => {}),
+        new Promise((r) => setTimeout(r, 10000).unref()),
+      ]);
+    }
   }
 }

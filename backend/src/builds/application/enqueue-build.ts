@@ -1,12 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { BuildJob } from '../domain/build-job';
 import { BuildQueueFullError } from '../domain/errors';
 import { BUILD_JOB_REPOSITORY, BUILD_DISPATCHER, BuildJobRepository, BuildDispatcher } from './ports';
 
 export const BUILD_QUEUE_LIMIT = Symbol('BUILD_QUEUE_LIMIT');
-
-// Module-level monotonic counter: concurrent POST'larda id collision yok.
-let seq = 0;
 
 @Injectable()
 export class EnqueueBuild {
@@ -20,10 +18,19 @@ export class EnqueueBuild {
     const all = await this.repo.findAll();
     const queued = all.filter((j) => j.status === 'queued').length;
     if (queued >= this.limit) throw new BuildQueueFullError(this.limit);
-    const id = `build-${++seq}-${Date.now().toString(36)}`;
+    // crypto.randomUUID (issue #12): restart/replica'da sıfırlanan ++seq çakışması yok.
+    const id = randomUUID();
     const job = BuildJob.newQueued(id, new Date().toISOString());
     await this.repo.save(job); // read-model mirror dispatch-ÖNCE (parity)
-    await this.dispatcher.dispatch(job);
+    try {
+      await this.dispatcher.dispatch(job);
+    } catch (err) {
+      // Dispatch telafisi (issue #12): Redis hatasında queued yetim kalmasın —
+      // mirror'da dispatch-lost yazılır; istemci 500 alır ve yeniden deneyebilir.
+      const lost = job.markDispatchLost(new Date().toISOString());
+      await this.repo.save(lost).catch(() => {});
+      throw err;
+    }
     return job;
   }
 }

@@ -37,8 +37,21 @@ test('below limit → execute enqueues queued job', async () => {
   const job = await enqueue.execute();
   await worker.drain();
   assert.equal(job.status, 'queued');
-  assert.ok(job.id.startsWith('build-'));
+  // crypto.randomUUID (issue #12): restart/replica'da çakışmayan id formatı.
+  assert.match(job.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   assert.ok(await repo.findById(job.id));
+});
+
+test('dispatch failure → markDispatchLost telafisi, yetim queued kalmaz (issue #12)', async () => {
+  const { repo, enqueue } = setup(10);
+  const failing = { dispatch: async () => { throw new Error('redis down'); } };
+  Object.assign(enqueue, { dispatcher: failing });
+  await assert.rejects(() => enqueue.execute(), /redis down/);
+  const all = await repo.findAll();
+  const lost = all.find((j) => j.id !== 'a');
+  assert.ok(lost, 'mirror kaydı var');
+  assert.equal(lost.status, 'failed');
+  assert.match(lost.error ?? '', /dispatch-lost/);
 });
 
 test('empty queue → execute enqueues', async () => {

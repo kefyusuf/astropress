@@ -50,7 +50,8 @@ test('POST /builds → 201 queued + id', async () => {
   assert.equal(res.status, 201);
   const job = await res.json();
   assert.equal(job.status, 'queued');
-  assert.ok(String(job.id).startsWith('build-'));
+  // crypto.randomUUID (issue #12): restart/replica'da çakışmayan id formatı.
+  assert.match(String(job.id), /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 });
 
 test('POST → GET poll → succeeded', async () => {
