@@ -11,7 +11,13 @@ test('varsayılan kimlik content-studio', () => {
 
 test('operator (insan) tüm yetkilere sahip', () => {
   const p = auth.getAgent('operator').perms;
-  assert.deepEqual(p, { create: true, edit: true, delete: true, commerce: true, publish: true });
+  assert.deepEqual(p, { create: true, edit: true, delete: true, commerce: true, publish: true, build: true });
+});
+
+test('build yetkisi yalnız operatörde (RBAC: run_build korunur)', () => {
+  for (const a of auth.listAgents()) {
+    assert.equal(a.perms.build, a.id === 'operator', a.id + ' build yetkisi yanlış');
+  }
 });
 
 test('content-studio: create/edit/delete var, commerce/publish yok', () => {

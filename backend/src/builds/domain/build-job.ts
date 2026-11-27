@@ -45,14 +45,15 @@ export class BuildJob {
   }
 
   static create(props: BuildJobProps): BuildJob {
-    if (!props.id || !props.id.trim()) {
-      throw new BuildValidationError('Build job id boş olamaz');
+    // typeof guard'ları: coerce geçişi + 500 TypeError yerine 400 BuildValidationError (issue #10).
+    if (typeof props?.id !== 'string' || !props.id.trim() || props.id.length > 128) {
+      throw new BuildValidationError('Build job id boş olamaz (string, ≤128)');
     }
     if (!STATUSES.includes(props.status)) {
-      throw new BuildValidationError(`Geçersiz status: ${props.status}`);
+      throw new BuildValidationError(`Geçersiz status: ${String(props?.status)}`);
     }
-    if (!props.createdAt || Number.isNaN(Date.parse(props.createdAt))) {
-      throw new BuildValidationError(`Geçersiz createdAt: ${props.createdAt}`);
+    if (typeof props?.createdAt !== 'string' || Number.isNaN(Date.parse(props.createdAt))) {
+      throw new BuildValidationError(`Geçersiz createdAt: ${String(props?.createdAt)}`);
     }
     if (props.status === 'running' && !props.startedAt) {
       throw new BuildValidationError('running job startedAt gerektirir');
@@ -60,11 +61,11 @@ export class BuildJob {
     if ((props.status === 'succeeded' || props.status === 'failed') && !props.finishedAt) {
       throw new BuildValidationError('terminal job finishedAt gerektirir');
     }
-    if (props.startedAt !== undefined && Number.isNaN(Date.parse(props.startedAt))) {
-      throw new BuildValidationError(`Geçersiz startedAt: ${props.startedAt}`);
+    if (props.startedAt !== undefined && (typeof props.startedAt !== 'string' || Number.isNaN(Date.parse(props.startedAt)))) {
+      throw new BuildValidationError(`Geçersiz startedAt: ${String(props.startedAt)}`);
     }
-    if (props.finishedAt !== undefined && Number.isNaN(Date.parse(props.finishedAt))) {
-      throw new BuildValidationError(`Geçersiz finishedAt: ${props.finishedAt}`);
+    if (props.finishedAt !== undefined && (typeof props.finishedAt !== 'string' || Number.isNaN(Date.parse(props.finishedAt)))) {
+      throw new BuildValidationError(`Geçersiz finishedAt: ${String(props.finishedAt)}`);
     }
     if (props.exitCode !== undefined && typeof props.exitCode !== 'number') {
       throw new BuildValidationError(`Geçersiz exitCode: ${props.exitCode}`);
