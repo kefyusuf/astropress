@@ -48,7 +48,13 @@ test('bullmq + Redis up → readyz 200, her iki component ready', { skip }, asyn
   const base = await boot(redisUrl!);
   const res = await fetch(`${base}/readyz`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { status: 'ready', components: { eventStore: 'ready', buildEngine: 'ready' } });
+  const body = await res.json();
+  assert.equal(body.status, 'ready');
+  // issue #16: registry + redis readiness sinyalleri — map genişledi (property-based assert).
+  assert.equal(body.components.eventStore, 'ready');
+  assert.equal(body.components.buildEngine, 'ready');
+  assert.equal(body.components.agents, 'ready');
+  assert.equal(body.components.redis, 'ready');
 });
 
 test('bullmq + Redis down → boot brick olmaz; readyz 503 buildEngine degraded; sites 200', { skip }, async () => {

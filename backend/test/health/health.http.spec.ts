@@ -69,7 +69,12 @@ test('readyz: file boot → 200 ready + component map', async () => {
   const base = await boot();
   const res = await fetch(`${base}/readyz`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { status: 'ready', components: { eventStore: 'ready', buildEngine: 'ready' } });
+  const body = await res.json();
+  assert.equal(body.status, 'ready');
+  // issue #16: registry readiness sinyali eklendi — map artık agents içerir.
+  assert.equal(body.components.eventStore, 'ready');
+  assert.equal(body.components.buildEngine, 'ready');
+  assert.equal(body.components.agents, 'ready');
 });
 
 test('token mode: healthz/readyz bearer\'sız 200 (public probe); sites perimeter intact (401)', async () => {
