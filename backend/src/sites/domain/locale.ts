@@ -2,5 +2,5 @@
 export const LOCALE_PATTERN = /^[a-z]{2}$/;
 
 export function isValidLocale(code: string): boolean {
-  return LOCALE_PATTERN.test(code);
+  return typeof code === 'string' && LOCALE_PATTERN.test(code); // typeof guard: coerce geçişi yok (issue #10)
 }

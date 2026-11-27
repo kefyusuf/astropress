@@ -120,7 +120,7 @@
   <div class="top-actions">
     <span id="build-state" class="build-state"></span>
     <button class="btn" data-action="theme" aria-label="Tema değiştir">Tema</button>
-    <a class="btn" href="/site/" target="_blank" rel="noopener">Siteyi gör</a>
+    <a class="btn" id="site-link" href="/site/" target="_blank" rel="noopener">Siteyi gör</a>
     <button class="btn primary" id="build-btn" data-action="build">Build al</button>
   </div>
 </header>
@@ -147,8 +147,20 @@
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString(DATE_LOCALE, { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   const fmtTs = (t) => new Date(t).toLocaleString(DATE_LOCALE, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
+  async function rawFetch(p, opts = {}) {
+    return fetch(p, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts });
+  }
+
+  // 401 → token sor, /api/login ile HttpOnly oturum çerezi al, isteği tekrarla.
   async function api(p, opts = {}) {
-    const r = await fetch(p, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    let r = await rawFetch(p, opts);
+    if (r.status === 401) {
+      const token = prompt('Admin token (ASTROPRESS_ADMIN_TOKEN):');
+      if (!token) throw new Error('Yetkisiz');
+      const lr = await rawFetch('/api/login', { method: 'POST', body: JSON.stringify({ token }) });
+      if (!lr.ok) throw new Error((await lr.json().catch(() => ({}))).error || 'Token geçersiz');
+      r = await rawFetch(p, opts);
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
     return j;
@@ -182,8 +194,8 @@
 
   async function renderAgents() {
     const agents = await api('/api/agents');
-    const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish'];
-    const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın' };
+    const permKeys = ['create', 'edit', 'delete', 'commerce', 'publish', 'build'];
+    const labels = { create: 'oluştur', edit: 'düzenle', delete: 'sil', commerce: 'fiyat/stok', publish: 'yayın', build: 'build' };
     main.innerHTML = `
       <div class="toolbar"><span class="small muted">Yetki matrisi sunucu tarafında zorunlu (kök agents.json). İnsan operatör tüm yetkilere sahiptir; agent'lar yayınlayamaz.</span></div>
       <div class="table-wrap"><table>
@@ -211,9 +223,9 @@
     return rows.map((i) => `
       <tr>
         <td class="cell-title" data-label="Başlık"><strong>${esc(i.title)}</strong><span class="slug">${esc(i.collection)}/${esc(i.id)}</span></td>
-        <td data-label="Tür"><span class="badge b-type">${COLS[i.collection]}</span></td>
-        <td data-label="Dil"><span class="badge ${i.lang !== DEFAULT_LANG ? 'b-en' : 'b-type'}">${LANG[i.lang] || DEFAULT_LANG.toUpperCase()}</span></td>
-        <td data-label="Durum"><span class="badge b-${i.status}">${STATUS[i.status]}</span></td>
+        <td data-label="Tür"><span class="badge b-type">${esc(COLS[i.collection] || i.collection)}</span></td>
+        <td data-label="Dil"><span class="badge ${i.lang !== DEFAULT_LANG ? 'b-en' : 'b-type'}">${esc(LANG[i.lang] || DEFAULT_LANG.toUpperCase())}</span></td>
+        <td data-label="Durum"><span class="badge b-${esc(i.status)}">${esc(STATUS[i.status] || i.status)}</span></td>
         <td data-label="Yazar">${esc(i.author)}</td>
         <td data-label="Tarih">${fmtDate(i.date)}</td>
         <td data-label="İşlemler"><div class="row-actions">
@@ -259,7 +271,7 @@
     main.innerHTML = `
       <div class="editor">
         <div class="status-line">
-          <span class="badge b-${d.status}">${STATUS[d.status]}</span>
+          <span class="badge b-${esc(d.status)}">${esc(STATUS[d.status] || d.status)}</span>
           <span class="small muted">${e ? esc(col) + '/' + esc(e.slug) : 'yeni kayıt'} — durum yalnız insan onayıyla değişir.</span>
         </div>
         <div class="grid2">
@@ -327,7 +339,7 @@
           <tr>
             <td class="cell-title" data-label="Başlık">${esc(t.title)}</td>
             <td data-label="Kayıt" class="small muted">${esc(t.collection)}/${esc(t.slug)}</td>
-            <td data-label="Sonuç"><span class="badge b-${t.status}">${t.status === 'done' ? 'Onaylandı' : 'Reddedildi'}</span></td>
+            <td data-label="Sonuç"><span class="badge b-${esc(t.status)}">${t.status === 'done' ? 'Onaylandı' : 'Reddedildi'}</span></td>
             <td data-label="Zaman" class="small muted">${fmtTs(t.ts)}</td>
           </tr>`).join('') : '<tr><td colspan="4"><div class="empty">Henüz işlem yok.</div></td></tr>'}</tbody>
       </table></div>`;
@@ -367,7 +379,7 @@
       payload.stock = Number($('#e-stock').value) || 0;
     }
     if (state.editing) {
-      await api(`/api/content/${state.editing.collection}/${state.editing.slug}`, { method: 'PUT', body: JSON.stringify(payload) });
+      await api(`/api/content/${encodeURIComponent(state.editing.collection)}/${encodeURIComponent(state.editing.slug)}`, { method: 'PUT', body: JSON.stringify(payload) });
       toast('Kaydedildi', 'ok');
     } else {
       payload.collection = col;
@@ -387,7 +399,7 @@
       else if (a === 'new') { state.editing = null; state.newDraft = null; state.view = 'editor'; render(); }
       else if (a === 'cancel') { state.view = 'content'; state.editing = null; render(); }
       else if (a === 'edit') {
-        const r = await api(`/api/content/${t.dataset.col}/${t.dataset.slug}`);
+        const r = await api(`/api/content/${encodeURIComponent(t.dataset.col)}/${encodeURIComponent(t.dataset.slug)}`);
         state.editing = { collection: t.dataset.col, slug: t.dataset.slug, data: r.data, body: r.body };
         state.view = 'editor'; render();
       }
@@ -399,15 +411,15 @@
       }
       else if (a === 'del') {
         if (!confirm(`${t.dataset.col}/${t.dataset.slug} silinsin mi? Geri alınamaz.`)) return;
-        await api(`/api/content/${t.dataset.col}/${t.dataset.slug}`, { method: 'DELETE' });
+        await api(`/api/content/${encodeURIComponent(t.dataset.col)}/${encodeURIComponent(t.dataset.slug)}`, { method: 'DELETE' });
         toast('Silindi', 'ok'); await loadAll();
       }
       else if (a === 'approve') {
-        const r = await api(`/api/tasks/${t.dataset.id}/approve`, { method: 'POST' });
+        const r = await api(`/api/tasks/${encodeURIComponent(t.dataset.id)}/approve`, { method: 'POST' });
         toast('Yayınlandı: ' + r.published, 'ok'); await loadAll();
       }
       else if (a === 'reject') {
-        await api(`/api/tasks/${t.dataset.id}/reject`, { method: 'POST' });
+        await api(`/api/tasks/${encodeURIComponent(t.dataset.id)}/reject`, { method: 'POST' });
         toast('Reddedildi — taslak kaldı'); await loadAll();
       }
       else if (a === 'refresh') await renderAudit();
@@ -449,6 +461,8 @@
       LANG = Object.fromEntries(c.locales.map((l) => [l, l.toUpperCase()]));
       DEFAULT_LANG = c.defaultLocale;
       DATE_LOCALE = c.defaultLocale;
+      const link = $('#site-link');
+      if (link && c.previewUrl) link.href = c.previewUrl;
     })
     .catch(() => {})
     .then(() => loadAll())

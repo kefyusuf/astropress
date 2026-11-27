@@ -8,9 +8,10 @@ const txt = (obj) => ({ content: [{ type: 'text', text: JSON.stringify(obj, null
 
 // Paylaşılan factory: stdio + HTTP her oturum için agent'a bağlı server üretir.
 // Guardrail: create/update şemalarında `status` YOK; publish yalnız request_publish -> approve (insan).
+// Audit gerçek agent.id ile yazılır (human/agent KIND flattening kaldırıldı — issue #9).
 export function createMcpServer(agent) {
   const P = agent.perms;
-  const KIND = P.publish ? 'human' : 'agent';
+  const ACTOR = agent.id;
   const server = new McpServer({ name: 'astropress', version: '0.1.0' });
 
   server.registerTool('whoami', {
@@ -31,32 +32,32 @@ export function createMcpServer(agent) {
   server.registerTool('create_content', {
     description: 'Yeni içerik oluşturur. Guardrail: durum her zaman "draft"; yayına alma insan onayı gerektirir.',
     inputSchema: { collection: col, title: z.string(), excerpt: z.string().optional(), body: z.string().optional(), author: z.string().optional(), lang: z.enum(locales).optional(), translationOf: z.string().optional() },
-  }, async (args) => txt(ops.create(args, KIND, P)));
+  }, async (args) => txt(ops.create(args, ACTOR, P)));
 
   server.registerTool('update_content', {
-    description: 'Mevcut içeriği günceller. Guardrail: status değiştirilemez; price/stock commerce yetkisi ister (RBAC).',
+    description: 'Mevcut içeriği günceller. Guardrail: status değiştirilemez; yayındaki içerik düzenlemesi inceleme revizyonuna düşer; price/stock commerce yetkisi ister (RBAC).',
     inputSchema: { collection: col, slug: z.string(), title: z.string().optional(), excerpt: z.string().optional(), body: z.string().optional(), seoTitle: z.string().optional(), seoDesc: z.string().optional(), price: z.number().optional(), stock: z.number().optional(), lang: z.enum(locales).optional(), translationOf: z.string().optional() },
-  }, async (args) => txt(ops.update(args, KIND, P)));
+  }, async (args) => txt(ops.update(args, ACTOR, P)));
 
   server.registerTool('delete_content', {
-    description: 'İçeriği siler (geri alınamaz; audit kaydı tutulur).',
+    description: 'İçeriği siler (geri alınamaz; yayındaki kayıt için publish yetkisi gerekir; audit kaydı tutulur).',
     inputSchema: { collection: col, slug: z.string() },
-  }, async (args) => txt(ops.remove(args, KIND, P)));
+  }, async (args) => txt(ops.remove(args, ACTOR, P)));
 
   server.registerTool('request_publish', {
-    description: 'Yayınlama isteği oluşturur; guardrail gereği insan onayı kuyruğuna düşer.',
+    description: 'Yayınlama isteği oluşturur (edit yetkisi gerekir); guardrail gereği insan onayı kuyruğuna düşer.',
     inputSchema: { collection: col, slug: z.string() },
-  }, async (args) => txt(ops.requestPublish(args, KIND)));
+  }, async (args) => txt(ops.requestPublish(args, ACTOR, P)));
 
   server.registerTool('approve_task', {
-    description: 'İNSAN onayı (perms.publish gerektirir): bekleyen yayınlama görevini uygular (status=published).',
+    description: 'İNSAN onayı (perms.publish gerektirir): bekleyen yayınlama görevini uygular (status=published). İçerik istekten sonra değiştiyse reddedilir.',
     inputSchema: { taskId: z.string() },
-  }, async (args) => txt(ops.approve(args, KIND, P)));
+  }, async (args) => txt(ops.approve(args, ACTOR, P)));
 
   server.registerTool('reject_task', {
-    description: 'İNSAN reddi (perms.publish gerektirir): bekleyen yayınlama görevini reddeder.',
+    description: 'İNSAN reddi (perms.publish gerektirir): onay bekleyen görevi reddeder.',
     inputSchema: { taskId: z.string() },
-  }, async (args) => txt(ops.reject(args, KIND, P)));
+  }, async (args) => txt(ops.reject(args, ACTOR, P)));
 
   server.registerTool('list_tasks', {
     description: 'Görev kuyruğunu listeler (onay bekleyenler dahil).',
@@ -64,12 +65,12 @@ export function createMcpServer(agent) {
   }, async (args) => txt(ops.tasks(args)));
 
   server.registerTool('run_build', {
-    description: 'astro build çalıştırır; statik çıktıyı (dist/) üretir.',
+    description: 'astro build çalıştırır (build yetkisi gerekir — RBAC); statik çıktıyı (dist/) üretir.',
     inputSchema: {},
-  }, async () => txt(ops.build(KIND)));
+  }, async () => txt(ops.build(ACTOR, P)));
 
   server.registerTool('audit_log', {
-    description: 'Denetim kaydını (insan + agent eylemleri) döndürür.',
+    description: 'Denetim kaydını (gerçek aktör kimlikleriyle) döndürür.',
     inputSchema: { limit: z.number().optional() },
   }, async (args) => txt(ops.audit(args)));
 
