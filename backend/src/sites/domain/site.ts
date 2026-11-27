@@ -24,11 +24,13 @@ export class Site {
   }
 
   static create(props: SiteProps): Site {
-    if (!ID_PATTERN.test(props.id)) {
-      throw new SiteValidationError(`Geçersiz site id (slug): ${props.id}`);
+    // typeof + max-length: undefined/null id string'e coerce edilip regex'i geçemesin;
+    // name: 123 / body: null 500 TypeError yerine 400 dönsün (issue #10).
+    if (typeof props?.id !== 'string' || props.id.length === 0 || props.id.length > 64 || !ID_PATTERN.test(props.id)) {
+      throw new SiteValidationError(`Geçersiz site id (slug): ${String(props?.id)}`);
     }
-    if (!props.name || !props.name.trim()) {
-      throw new SiteValidationError('Site name boş olamaz');
+    if (typeof props?.name !== 'string' || !props.name.trim() || props.name.length > 200) {
+      throw new SiteValidationError('Site name boş olamaz (string, ≤200 karakter)');
     }
     if (!Array.isArray(props.locales) || props.locales.length === 0) {
       throw new SiteValidationError('locales en az bir dil içermeli');
