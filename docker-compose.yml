@@ -31,13 +31,22 @@ services:
       - ./.astropress:/app/.astropress
   backend:
     build: .
-    command: sh -c "npm --prefix backend run build && npm --prefix backend run start"
+    # exec: build sonrası npm PID 1 olur — SIGTERM graceful shutdown'a ulaşır (issue #16).
+    command: sh -c "npm --prefix backend run build && exec npm --prefix backend run start"
     ports:
       - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       ASTROPRESS_STORAGE: file
       ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
+      HOST: 0.0.0.0
       PORT: "3000"
+      # Dev-only: container dışı Host başlıkları için (üretimde allowlist kullanın).
+      ASTROPRESS_ALLOW_ANY_HOST: "1"
       DATABASE_URL: postgres://astropress:astropress@postgres:5432/astropress
       REDIS_URL: redis://redis:6379
       ASTROPRESS_BUILDS: ${ASTROPRESS_BUILDS:-file}
@@ -68,7 +77,8 @@ services:
       POSTGRES_PASSWORD: astropress   # dev-only, production değil
       POSTGRES_DB: astropress
     ports:
-      - "5432:5432"
+      # Dev-only DB/Redis portları yalnız host loopback'e bağlı (issue #16).
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -79,7 +89,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

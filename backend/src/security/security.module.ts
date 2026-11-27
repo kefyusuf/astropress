@@ -17,19 +17,27 @@ import { PermissionGuard } from './interface/permission.guard';
 import { AgentThrottlerGuard } from './interface/agent-throttler.guard';
 import { RedisThrottlerStorage } from './infrastructure/redis-throttler.storage';
 import { createRedisConnection } from '../infrastructure/redis-connection';
+import { ReadinessState } from '../health/readiness-state';
 
 @Module({
   imports: [
     // forRootAsync factory compile-time çalışır → ASTROPRESS_RATE_LIMIT env override per-test boot'ta etkili.
     // ttl MILLISECONDS (v6). Default 60 mutation/dk/agent/route. E: REDIS_URL set → Redis storage (guard/config değişmez).
     ThrottlerModule.forRootAsync({
-      useFactory: () => {
+      useFactory: (readiness: ReadinessState) => {
         const throttlers = [{ ttl: 60000, limit: Number(process.env.ASTROPRESS_RATE_LIMIT) || 60 }];
         const url = process.env.REDIS_URL;
-        return url
-          ? { throttlers, storage: new RedisThrottlerStorage(createRedisConnection(url)) }
-          : { throttlers };
+        if (!url) {
+          readiness.set('redis', true); // in-memory storage: her zaman hazır (issue #16)
+          return { throttlers };
+        }
+        const connection = createRedisConnection(url);
+        // Redis readiness sinyali (issue #16): bağlantı durumu readyz'e yansır.
+        connection.on('ready', () => readiness.set('redis', true));
+        connection.on('error', () => readiness.set('redis', false));
+        return { throttlers, storage: new RedisThrottlerStorage(connection) };
       },
+      inject: [ReadinessState],
     }),
   ],
   providers: [
@@ -38,15 +46,17 @@ import { createRedisConnection } from '../infrastructure/redis-connection';
     { provide: DATABASE_URL, useFactory: () => process.env.DATABASE_URL || '' },
     {
       provide: AGENT_REGISTRY,
-      useFactory: async (agentsFile: string, dbUrl: string): Promise<AgentRegistry> => {
+      useFactory: async (agentsFile: string, dbUrl: string, readiness: ReadinessState): Promise<AgentRegistry> => {
         if (process.env.ASTROPRESS_STORAGE === 'postgres') {
           const registry = new PostgresAgentRegistry(dbUrl, agentsFile);
           await registry.init();
+          readiness.set('agents', true); // registry readiness sinyali (issue #16)
           return registry;
         }
+        readiness.set('agents', true); // file registry: her zaman hazır
         return new FileAgentRegistry(agentsFile);
       },
-      inject: [AGENTS_FILE, DATABASE_URL],
+      inject: [AGENTS_FILE, DATABASE_URL, ReadinessState],
     },
     {
       provide: TOKEN_STORE,

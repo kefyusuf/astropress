@@ -1,8 +1,8 @@
 # AstroPress
 
 [![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-yellow.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)
-![Astro](https://img.shields.io/badge/Astro-5-FF5D01?logo=astro&logoColor=white)
+![Node](https://img.shields.io/badge/node-%3E%3D22.23.4-339933?logo=node.js&logoColor=white)
+![Astro](https://img.shields.io/badge/Astro-7-FF5D01?logo=astro&logoColor=white)
 
 Astro tabanlı **agent-native CMS**: gerçek bir Astro statik site iskeleti + agent'ların siteyi
 **güvenle** yönetmesini sağlayan MCP (Model Context Protocol) köprüsü. Guardrail (yetki sınırı),
@@ -391,7 +391,7 @@ Sunucu kök dizini kendi dosya konumundan çözer; `cwd` gerekmez, mutlak yol ye
   **D2 ✔** — builds retention + queue-bound (`ASTROPRESS_BUILD_QUEUE_LIMIT`, default 10 → 429 queue-full; `ASTROPRESS_BUILD_RETENTION`, default 50 keep-last-N terminal prune).
   **Group E ✔** — BullMQ+Redis durable engine (opt-in, `ASTROPRESS_BUILDS=bullmq`) + throttler Redis storage (`REDIS_URL`); engine bölümüne bkz.
   **Faz-3 EventStore ✔** (event-sourced full recovery) + **concurrency-N ✔** (`ASTROPRESS_BUILD_CONCURRENCY`, per-build izole root). **Faz-2+ token auth ✔** — statik API key bearer (opt-in `ASTROPRESS_AUTH=token`); distributed registry ✔ (Faz-4: shared postgres agents+tokens, boot-seed upsert). **Hardening ✔** (readiness healthz/readyz + throttler Lua atomicity — Faz-3 seam'leri kapandı).
-- **CI (`.github/workflows/ci.yml`):** push/PR'da node **20 / 22 / 24** matrisinde `npm ci → build → test → smoke → smoke:http → backend:ci`.
+- **CI (`.github/workflows/ci.yml`):** push/PR'da node **22 / 24** matrisinde `npm ci → audit → astro check → build → test → smoke → smoke:http → backend:ci`.
   Yerel eşdeğeri: `npm run ci`.
 
 ## Yönetim arayüzü (`npm run admin`)

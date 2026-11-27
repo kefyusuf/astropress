@@ -8,3 +8,6 @@ backend/dist
 prototype
 *.log
 .DS_Store
+.env
+.env.*
+!.env.example

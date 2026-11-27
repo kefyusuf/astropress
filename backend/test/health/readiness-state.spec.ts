@@ -27,3 +27,12 @@ test('set: degraded → heal (true ile üzerine yaz)', () => {
   r.set('buildEngine', true);
   assert.equal(r.snapshot().status, 'ready');
 });
+
+test('shutdown degrade: onApplicationShutdown → degraded + shutdown component (issue #16)', () => {
+  const r = new ReadinessState();
+  r.set('buildEngine', true);
+  assert.equal(r.snapshot().status, 'ready');
+  r.onApplicationShutdown();
+  assert.equal(r.snapshot().status, 'degraded');
+  assert.equal(r.snapshot().components.shutdown, 'degraded');
+});

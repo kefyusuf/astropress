@@ -5,5 +5,10 @@ dist/
 *.log
 .DS_Store
 
+# Secret state (issue #16): gerçek env dosyaları repoya girmesin; şablon hariç.
+.env
+.env.*
+!.env.example
+
 # SDD implementation plans local-only (specs/ tracked kalır)
 docs/superpowers/plans/
