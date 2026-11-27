@@ -3,6 +3,7 @@ import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { MintOptions, TokenStore } from '../application/token-store';
+import { resolveRepoRoot } from '../../infrastructure/repo-root';
 
 export const TOKEN_STORE_FILE = Symbol('TOKEN_STORE_FILE');
 
@@ -22,13 +23,7 @@ interface TokenFileV2 {
 
 export function defaultTokenStoreFile(): string {
   if (process.env.ASTROPRESS_STATE) return path.join(process.env.ASTROPRESS_STATE, 'agent-tokens.json');
-  let dir = __dirname;
-  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return path.join(dir, '.astropress', 'agent-tokens.json');
+  return path.join(resolveRepoRoot(), '.astropress', 'agent-tokens.json');
 }
 
 function normalize(raw: unknown): TokenFileV2 {

@@ -4,21 +4,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Agent, Perms } from '../domain/agent';
 import { UnknownAgentError } from '../domain/errors';
 import { AgentRegistry } from '../application/agent-registry';
+import { resolveRepoRoot } from '../../infrastructure/repo-root';
 
 export const AGENTS_FILE = Symbol('AGENTS_FILE');
 
 // Tek doğruluk kaynağı repo kökünde COMMITTED agents.json (config katmanı, sites.json emsali).
-// Repo kökü, modül konumundan astro.config.mjs işaretçisine yürüyerek bulunur (cwd/dist derinliğinden bağımsız).
 // Testler ASTROPRESS_AGENTS_FILE ile temp'e yönlendirir.
 export function defaultAgentsFile(): string {
   if (process.env.ASTROPRESS_AGENTS_FILE) return process.env.ASTROPRESS_AGENTS_FILE;
-  let dir = __dirname;
-  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return path.join(dir, 'agents.json');
+  return path.join(resolveRepoRoot(), 'agents.json');
 }
 
 @Injectable()

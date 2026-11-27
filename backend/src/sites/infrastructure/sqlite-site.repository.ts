@@ -4,20 +4,14 @@ import Database from 'better-sqlite3';
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Site } from '../domain/site';
 import { SiteRepository } from '../application/ports';
+import { resolveRepoRoot } from '../../infrastructure/repo-root';
 
 export const DB_FILE = Symbol('DB_FILE');
 
 // DB runtime state'tir (.astropress/ gitignore'lu) — committed sites.json config olarak kalır (F0).
-// Repo kökü astro.config.mjs işaretçisine yürüyerek bulunur (cwd/dist derinliğinden bağımsız).
 export function defaultDbFile(): string {
   if (process.env.ASTROPRESS_DB_FILE) return process.env.ASTROPRESS_DB_FILE;
-  let dir = __dirname;
-  while (!fs.existsSync(path.join(dir, 'astro.config.mjs'))) {
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return path.join(dir, '.astropress', 'sites.db');
+  return path.join(resolveRepoRoot(), '.astropress', 'sites.db');
 }
 
 interface SiteRow {
@@ -35,6 +29,8 @@ export class SqliteSiteRepository implements SiteRepository, OnModuleDestroy {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new Database(file);
     this.db.pragma('journal_mode = WAL');
+    // WAL + eşzamanlı yazımda SQLITE_BUSY: 5s busy_timeout (issue #13).
+    this.db.pragma('busy_timeout = 5000');
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS sites (id TEXT PRIMARY KEY, name TEXT NOT NULL, locales TEXT NOT NULL, default_locale TEXT NOT NULL)',
     );
