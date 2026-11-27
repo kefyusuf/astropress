@@ -1,15 +1,36 @@
 ---
 import '../styles/global.css';
-import { defaultLocale, localePrefix, locales, type Locale } from '../lib/site.config';
-import { other } from '../lib/i18n';
-import { ui } from '../lib/ui';
-interface Props { title: string; description?: string; lang?: Locale; altHref?: string; }
-const { title, lang = defaultLocale, altHref } = Astro.props;
-const t = ui[lang];
+import { defaultLocale, localePrefix, locales, siteConfig, type Locale } from '../lib/site.config';
+import { homeHrefs, defaultHref, type LangLink } from '../lib/i18n';
+import { uiFor } from '../lib/ui';
+
+interface Props {
+  title: string;
+  description?: string;
+  lang?: Locale;
+  /** Dil değiştirici + hreflang seti; verilmezse locale kökleri kullanılır. */
+  links?: LangLink[];
+  ogType?: 'website' | 'article' | 'product';
+  /** Sayfa-tipi JSON-LD (BlogPosting/Product); WebSite+Organization otomatik eklenir. */
+  jsonLd?: Record<string, unknown>;
+}
+const { title, lang = defaultLocale, links, ogType = 'website', jsonLd } = Astro.props;
+const t = uiFor(lang);
 const description = Astro.props.description || t.description;
 const home = localePrefix(lang) + '/';
 const aboutHref = `${localePrefix(lang)}/${t.aboutSlug}/`;
-const switchHref = altHref || `${localePrefix(other(lang))}/`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const langLinks = links ?? homeHrefs(lang);
+const multiLang = locales.length > 1;
+
+// Sayfa bazlı JSON-LD + site-geneli WebSite/Organization.
+// </script> breakout koruması: JSON içindeki '<' unicode-escape edilir (issue #14).
+const safeJson = (o: Record<string, unknown>): string => JSON.stringify(o).replace(/</g, '\\u003c');
+const jsonLdAll: Record<string, unknown>[] = [
+  { '@context': 'https://schema.org', '@type': 'WebSite', name: siteConfig.name, url: Astro.site?.toString() },
+  { '@context': 'https://schema.org', '@type': 'Organization', name: siteConfig.name, url: Astro.site?.toString() },
+];
+if (jsonLd) jsonLdAll.push(jsonLd);
 ---
 <!doctype html>
 <html lang={lang}>
@@ -20,21 +41,39 @@ const switchHref = altHref || `${localePrefix(other(lang))}/`;
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="description" content={description} />
   <title>{title}</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="canonical" href={canonical} />
+  {multiLang && langLinks.map((l) => (
+    <link rel="alternate" hreflang={l.lang} href={new URL(l.href, Astro.site)} />
+  ))}
+  {multiLang && <link rel="alternate" hreflang="x-default" href={new URL(defaultHref(langLinks), Astro.site)} />}
+  <meta property="og:site_name" content={siteConfig.name} />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content={canonical} />
+  <meta property="og:type" content={ogType} />
+  <meta property="og:locale" content={lang} />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  {jsonLdAll.map((obj) => <script type="application/ld+json" set:html={safeJson(obj)} />)}
 </head>
 <body>
   <header class="site-head">
     <a class="brand" href={home}>
-      <span class="brand-mark">☕</span> Köz Kahve
+      <span class="brand-mark">☕</span> {siteConfig.name}
     </a>
     <nav>
       <a href={home}>{t.shop}</a>
       <a href={home + '#blog'}>Blog</a>
       <a href={aboutHref}>{t.about}</a>
-      <span class="lang-switch">
-        {locales.map((l) => l === lang
-          ? <span class="active">{l.toUpperCase()}</span>
-          : <a href={switchHref}>{l.toUpperCase()}</a>)}
-      </span>
+      {multiLang && (
+        <span class="lang-switch">
+          {langLinks.map((l) => l.active
+            ? <span class="active" aria-current="true">{l.lang.toUpperCase()}</span>
+            : <a href={l.href} lang={l.lang} hreflang={l.lang} aria-label={`Switch language: ${l.lang}`}>{l.lang.toUpperCase()}</a>)}
+        </span>
+      )}
     </nav>
   </header>
   <main class="wrap">

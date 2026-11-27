@@ -1,18 +1,18 @@
 ---
 import Base from '../layouts/Base.astro';
-import { publishedIn, other, type Lang } from '../lib/i18n';
+import { publishedIn, homeHrefs, formatPrice, type Lang } from '../lib/i18n';
 import { localePrefix } from '../lib/site.config';
-import { ui } from '../lib/ui';
+import { uiFor } from '../lib/ui';
 interface Props { lang: Lang; }
 const { lang } = Astro.props;
-const t = ui[lang];
+const t = uiFor(lang);
 const prefix = localePrefix(lang);
+const links = homeHrefs(lang);
 const posts = (await publishedIn('blog', lang))
   .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
 const products = await publishedIn('products', lang);
-const alt = `${localePrefix(other(lang))}/`;
 ---
-<Base title={t.homeTitle} lang={lang} altHref={alt}>
+<Base title={t.homeTitle} lang={lang} links={links}>
   <section class="hero">
     <span class="kicker">{t.kicker}</span>
     <h1>{t.heroTitlePre}<em>{t.heroTitleAccent}</em></h1>
@@ -25,7 +25,7 @@ const alt = `${localePrefix(other(lang))}/`;
       <div class="card">
         <h3><a href={`${prefix}/products/${p.id}/`}>{p.data.title}</a></h3>
         <p>{p.data.excerpt}</p>
-        <span class="price">₺{p.data.price}</span>
+        <span class="price">{formatPrice(p.data.price, t.dateLocale)}</span>
       </div>
     ))}
   </div>
@@ -34,7 +34,7 @@ const alt = `${localePrefix(other(lang))}/`;
   <div class="post-list">
     {posts.map((p) => (
       <a class="post-row" href={`${prefix}/blog/${p.id}/`}>
-        <span class="date">{p.data.date.toLocaleDateString(t.dateLocale, { day: '2-digit', month: 'short' })}</span>
+        <time class="date" datetime={p.data.date.toISOString()}>{p.data.date.toLocaleDateString(t.dateLocale, { day: '2-digit', month: 'short' })}</time>
         <span>
           <h3>{p.data.title}</h3>
           <p>{p.data.excerpt}</p>

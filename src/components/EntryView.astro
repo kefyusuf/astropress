@@ -1,28 +1,64 @@
 ---
-import { render } from 'astro:content';
+import { render, type CollectionEntry } from 'astro:content';
 import Base from '../layouts/Base.astro';
-import { altHref, type Col, type Lang } from '../lib/i18n';
-import { ui } from '../lib/ui';
-interface Props { collection: Col; entry: any; lang: Lang; }
+import { entryHrefs, formatPrice, type Col, type Lang } from '../lib/i18n';
+import { uiFor } from '../lib/ui';
+
+// Tipli entry (issue #14): `entry: any` yerine CollectionEntry birliği.
+type AnyEntry = CollectionEntry<'blog' | 'products' | 'pages'>;
+interface Props { collection: Col; entry: AnyEntry; lang: Lang; }
 const { collection, entry, lang } = Astro.props;
 const { Content } = await render(entry);
-const alt = await altHref(collection, entry);
-const t = ui[lang];
+const links = await entryHrefs(collection, entry);
+const t = uiFor(lang);
 const badge = collection === 'blog' ? t.badgePost : collection === 'products' ? t.badgeProduct : t.badgePage;
+// Type predicates: koşullu render + JSON-LD üretiminde entry.data alan erişimlerini
+// astro check (strict) altında daraltır (issue #14).
+const isBlog = (e: AnyEntry): e is CollectionEntry<'blog'> => collection === 'blog' && 'author' in e.data;
+const isProduct = (e: AnyEntry): e is CollectionEntry<'products'> => collection === 'products' && 'price' in e.data;
+const pageUrl = new URL(Astro.url.pathname, Astro.site).toString();
+
+const jsonLd = isBlog(entry) ? {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: entry.data.title,
+  description: entry.data.seoDesc || entry.data.excerpt,
+  datePublished: entry.data.date.toISOString(),
+  author: { '@type': 'Person', name: entry.data.author },
+  mainEntityOfPage: pageUrl,
+} : isProduct(entry) ? {
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: entry.data.title,
+  description: entry.data.seoDesc || entry.data.excerpt,
+  offers: {
+    '@type': 'Offer',
+    price: entry.data.price,
+    priceCurrency: 'TRY',
+    availability: entry.data.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+  },
+} : undefined;
 ---
-<Base title={entry.data.seoTitle || entry.data.title} description={entry.data.seoDesc || entry.data.excerpt} lang={lang} altHref={alt}>
+<Base
+  title={entry.data.seoTitle || entry.data.title}
+  description={entry.data.seoDesc || entry.data.excerpt}
+  lang={lang}
+  links={links}
+  ogType={collection === 'blog' ? 'article' : collection === 'products' ? 'product' : 'website'}
+  jsonLd={jsonLd}
+>
   <article class="prose">
     <div class="meta">
       <span class="badge">{badge}</span>
-      {collection === 'blog' && (
+      {isBlog(entry) && (
         <>
           <span>{entry.data.author}</span>
-          <span>{entry.data.date.toLocaleDateString(t.dateLocale)}</span>
+          <time datetime={entry.data.date.toISOString()}>{entry.data.date.toLocaleDateString(t.dateLocale)}</time>
         </>
       )}
-      {collection === 'products' && (
+      {isProduct(entry) && (
         <>
-          <span class="price">₺{entry.data.price}</span>
+          <span class="price">{formatPrice(entry.data.price, t.dateLocale)}</span>
           <span>{t.stock} {entry.data.stock}</span>
         </>
       )}

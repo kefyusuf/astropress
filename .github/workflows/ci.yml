@@ -45,6 +45,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Typecheck (astro check, issue #14)
+        run: npm run check
       - name: Build (astro)
         run: npm run build
       - name: Unit + integration tests
