@@ -31,15 +31,17 @@ const products = await publishedIn('products', lang);
   </div>
 
   <div class="sec-h" id="blog"><h2>{t.latest}</h2><span>{t.coproduction}</span></div>
-  <div class="post-list">
+  <ul class="post-list">
     {posts.map((p) => (
-      <a class="post-row" href={`${prefix}/blog/${p.id}/`}>
-        <time class="date" datetime={p.data.date.toISOString()}>{p.data.date.toLocaleDateString(t.dateLocale, { day: '2-digit', month: 'short' })}</time>
-        <span>
-          <h3>{p.data.title}</h3>
-          <p>{p.data.excerpt}</p>
-        </span>
-      </a>
+      <li>
+        <article class="post-row">
+          <time class="date" datetime={p.data.date.toISOString()}>{p.data.date.toLocaleDateString(t.dateLocale, { day: '2-digit', month: 'short' })}</time>
+          <div>
+            <h3><a href={`${prefix}/blog/${p.id}/`}>{p.data.title}</a></h3>
+            <p>{p.data.excerpt}</p>
+          </div>
+        </article>
+      </li>
     ))}
-  </div>
+  </ul>
 </Base>
