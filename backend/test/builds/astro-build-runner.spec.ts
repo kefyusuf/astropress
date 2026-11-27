@@ -6,7 +6,7 @@ import path from 'node:path';
 import childProcess from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { AstroBuildRunner, defaultRoot, killTree } from '../../src/builds/infrastructure/astro-build-runner';
+import { AstroBuildRunner, defaultRoot, killTree, buildEnv } from '../../src/builds/infrastructure/astro-build-runner';
 import { BuildWorkspace } from '../../src/builds/infrastructure/build-workspace';
 
 // Gerçek astro build (birkaç sn): isolation dürüst kanıtı. run(jobId) → izole root, cleanup finally (ephemeral).
@@ -75,7 +75,7 @@ function fakeChild(pid: number): { child: ChildProcess; kills: string[] } {
   return { child: child as unknown as ChildProcess, kills };
 }
 
-test('killTree win32 → taskkill /T /F /PID (tree kill, child.kill değil)', () => {
+test('killTree win32 → child.kill(SIGKILL) (taskkill spawn yok — statik olmayan argüman kuralı, issue #11 notu)', () => {
   const { child, kills } = fakeChild(4321);
   const spawns: Array<[string, string[]]> = [];
   const m = mock.method(childProcess, 'spawn', (cmd: string, args: string[]) => {
@@ -84,10 +84,8 @@ test('killTree win32 → taskkill /T /F /PID (tree kill, child.kill değil)', ()
   });
   try {
     forcePlatform('win32', () => killTree(child));
-    assert.equal(spawns.length, 1, 'taskkill spawn edilmeli');
-    assert.equal(spawns[0][0], 'taskkill');
-    assert.deepEqual(spawns[0][1], ['/T', '/F', '/PID', '4321']);
-    assert.equal(kills.length, 0, 'win32 taskkill kullanır, child.kill fallback değil');
+    assert.equal(spawns.length, 0, 'win32 spawn yok — TerminateProcess yolu');
+    assert.deepEqual(kills, ['SIGKILL'], 'child.kill SIGKILL kullanılır');
   } finally { m.mock.restore(); }
 });
 
@@ -114,4 +112,30 @@ test('killTree POSIX fallback → process.kill throws → child.kill()', () => {
     forcePlatform('linux', () => killTree(child));
     assert.equal(kills.length, 1, 'group kill başarısız → en azından child öldürülür');
   } finally { m.mock.restore(); }
+});
+
+test('buildEnv: DATABASE_URL / REDIS_URL / secret env\u2019ler build sürecine sızmaz (kabul kriteri)', () => {
+  const saved: Record<string, string | undefined> = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    REDIS_URL: process.env.REDIS_URL,
+    ASTROPRESS_TOKEN_SECRET: process.env.ASTROPRESS_TOKEN_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+  };
+  process.env.DATABASE_URL = 'postgres://secret@example.com/db';
+  process.env.REDIS_URL = 'redis://secret@example.com:6379';
+  process.env.ASTROPRESS_TOKEN_SECRET = 'topsecret';
+  process.env.NODE_ENV = 'test';
+  try {
+    const env = buildEnv();
+    assert.equal(env.DATABASE_URL, undefined);
+    assert.equal(env.REDIS_URL, undefined);
+    assert.equal(env.ASTROPRESS_TOKEN_SECRET, undefined);
+    assert.equal(env.NODE_ENV, 'test');
+    assert.ok(env.PATH, 'PATH taşınmalı (astro build çalışsın)');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
 });
