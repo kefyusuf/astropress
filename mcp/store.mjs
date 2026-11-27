@@ -10,6 +10,12 @@ export const CONTENT = process.env.ASTROPRESS_CONTENT || path.join(ROOT, 'src', 
 export const STATE = process.env.ASTROPRESS_STATE || path.join(ROOT, '.astropress');
 export const COLLECTIONS = { blog: 'post', products: 'product', pages: 'page' };
 
+// gray-matter v4, ---js / ---javascript frontmatter bloklarını eval ile çalıştırır (RCE).
+// Motorları kalıcı diyete sok: JS frontmatter içeren dosya kod çalıştırmaz, hata fırlatır.
+const jsEngineDenied = () => { throw new Error('JS frontmatter motoru devre dışı (güvenlik)'); };
+const SAFE_MATTER_OPTIONS = { engines: { js: jsEngineDenied, javascript: jsEngineDenied } };
+const safeMatterRead = (file) => matter.read(file, SAFE_MATTER_OPTIONS);
+
 const TR = { 'ğ': 'g', 'ü': 'u', 'ş': 's', 'ö': 'o', 'ç': 'c', 'ı': 'i', 'Ğ': 'g', 'Ü': 'u', 'Ş': 's', 'Ö': 'o', 'Ç': 'c', 'İ': 'i' };
 export function slugify(s) {
   return String(s)
@@ -29,13 +35,14 @@ function fileFor(collection, slug) {
 }
 
 export function listContent(collection, status) {
+  if (collection && !COLLECTIONS[collection]) throw new Error('Bilinmeyen collection: ' + collection);
   const cols = collection ? [collection] : Object.keys(COLLECTIONS);
   const out = [];
   for (const c of cols) {
     const dir = path.join(CONTENT, c);
     if (!fs.existsSync(dir)) continue;
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.md'))) {
-      const { data } = matter.read(path.join(dir, f));
+      const { data } = safeMatterRead(path.join(dir, f));
       if (status && data.status !== status) continue;
       out.push({ id: f.replace(/\.md$/, ''), collection: c, type: COLLECTIONS[c], ...data });
     }
@@ -46,7 +53,7 @@ export function listContent(collection, status) {
 export function readContent(collection, slug) {
   const p = fileFor(collection, slug);
   if (!fs.existsSync(p)) throw new Error('İçerik yok: ' + collection + '/' + slug);
-  const { data, content } = matter.read(p);
+  const { data, content } = safeMatterRead(p);
   return { data, body: content };
 }
 

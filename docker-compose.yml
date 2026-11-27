@@ -19,9 +19,14 @@ services:
     command: node mcp/http.mjs
     ports:
       - "4322:4322"
+      - "4324:4324"   # site önizleme (admin API'den ayrı origin)
     environment:
       HOST: 0.0.0.0
       PORT: "4322"
+      ASTROPRESS_PREVIEW_PORT: "4324"
+      # Dev-only: container dışından erişim için. Üretimde güçlü token ile host allowlist kullanın.
+      ASTROPRESS_ADMIN_TOKEN: ${ASTROPRESS_ADMIN_TOKEN:?ASTROPRESS_ADMIN_TOKEN zorunlu (>=16 karakter)}
+      ASTROPRESS_ALLOW_ANY_HOST: "1"
       ASTROPRESS_SITE: ${ASTROPRESS_SITE:-}
     volumes:
       - .:/app
