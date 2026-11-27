@@ -5,11 +5,13 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { AppModule } from './app.module';
+import { configureApp } from './app-config';
 
 // Structured JSON logging (issue #16): Nest logger'ı Pino'ya bağlanır — 401/redis/bootstrap
 // hataları yapılandırılmış loglarda görünür (kabul kriteri).
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
+// #19 (+ #16): tek kaynak üretim konfigürasyonu configureApp'ta; Pino logger burada bağlanır.
 class PinoLoggerService implements LoggerService {
   log(message: unknown, ctx?: string): void { logger.info({ ctx }, String(message)); }
   error(message: unknown, trace?: unknown, ctx?: string): void {
@@ -35,6 +37,7 @@ function resolvePort(): number {
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  configureApp(app);
   app.useLogger(new PinoLoggerService());
   // X-Request-Id middleware (issue #16): istek-yanıt korelasyonu — gelen id korunur,
   // yoksa üretilir; yanıt başlığıyla geri verilir.
@@ -44,7 +47,6 @@ async function bootstrap(): Promise<void> {
     res.setHeader('X-Request-Id', requestId);
     next();
   });
-  app.useBodyParser('json', { limit: '1mb' });
   const port = resolvePort();
   const host = process.env.HOST || '127.0.0.1';
   // useProcessExit: NestJS default cleanup sonrası signal'i re-raise eder (exit 143/null);

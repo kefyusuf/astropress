@@ -25,7 +25,13 @@ import { ReadinessState } from '../health/readiness-state';
     // ttl MILLISECONDS (v6). Default 60 mutation/dk/agent/route. E: REDIS_URL set → Redis storage (guard/config değişmez).
     ThrottlerModule.forRootAsync({
       useFactory: (readiness: ReadinessState) => {
-        const throttlers = [{ ttl: 60000, limit: Number(process.env.ASTROPRESS_RATE_LIMIT) || 60 }];
+        // Pozitif tam sayı doğrulama: negatif/NaN sessizce kilitlenme yerine fail-fast (issue #10).
+        const rawLimit = process.env.ASTROPRESS_RATE_LIMIT;
+        if (rawLimit !== undefined && (!Number.isInteger(Number(rawLimit)) || Number(rawLimit) <= 0)) {
+          throw new Error(`ASTROPRESS_RATE_LIMIT pozitif tam sayı olmalı: "${rawLimit}"`);
+        }
+        const limit = rawLimit === undefined ? 60 : Number(rawLimit);
+        const throttlers = [{ ttl: 60000, limit }];
         const url = process.env.REDIS_URL;
         if (!url) {
           readiness.set('redis', true); // in-memory storage: her zaman hazır (issue #16)
@@ -72,10 +78,24 @@ import { ReadinessState } from '../health/readiness-state';
     },
     {
       provide: IDENTITY_RESOLVER,
-      useFactory: (registry: AgentRegistry, store: TokenStore) =>
-        (process.env.ASTROPRESS_AUTH || 'header') === 'token'
-          ? new TokenIdentityResolver(store, registry)
-          : new HeaderIdentityResolver(registry),
+      useFactory: (registry: AgentRegistry, store: TokenStore) => {
+        // Fail-fast: bilinmeyen ASTROPRESS_AUTH değeri boot'u öldürür; sessiz header fallback'i yok (issue #10).
+        const raw = process.env.ASTROPRESS_AUTH;
+        const mode = raw === undefined || raw === '' ? 'header' : raw;
+        if (mode !== 'header' && mode !== 'token') {
+          throw new Error(`Bilinmeyen ASTROPRESS_AUTH: "${raw}" (geçerli: header|token)`);
+        }
+        if (mode === 'header') {
+          // Varsayılan güvensiz mod üretimde reddedilir: header spoofable (OWASP API2).
+          if (process.env.NODE_ENV === 'production') {
+            throw new Error('NODE_ENV=production ile ASTROPRESS_AUTH=header reddedildi — ASTROPRESS_AUTH=token kullanın (fail-fast)');
+          }
+          // eslint-disable-next-line no-console
+          console.warn('[security] ASTROPRESS_AUTH=header — YALNIZ GELİŞTİRME: x-astropress-agent header\u2019ı spoofable; üretimde token modu kullanın');
+          return new HeaderIdentityResolver(registry);
+        }
+        return new TokenIdentityResolver(store, registry);
+      },
       inject: [AGENT_REGISTRY, TOKEN_STORE],
     },
     { provide: APP_GUARD, useClass: AgentThrottlerGuard },
